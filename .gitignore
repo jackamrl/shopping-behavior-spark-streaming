@@ -1,4 +1,15 @@
-.data
+# Scala / SBTdata/
+target/
+project/target/
+project/project/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Logs et OS
+*.log
+.DS_Store
+
 .env
-.idea
-.target
+
