@@ -12,4 +12,4 @@ project/project/
 .DS_Store
 
 .env
-
+.dataproc-job.conf
