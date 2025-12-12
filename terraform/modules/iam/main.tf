@@ -84,6 +84,13 @@ resource "google_project_iam_member" "github_actions_dataproc" {
   member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
 
+# Permission pour activer les APIs (nécessaire pour Terraform Apply)
+resource "google_project_iam_member" "github_actions_serviceusage" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageAdmin"
+  member  = "serviceAccount:${google_service_account.github_actions.email}"
+}
+
 # Outputs
 output "dataproc_service_account_email" {
   description = "Email du Service Account Dataproc"
