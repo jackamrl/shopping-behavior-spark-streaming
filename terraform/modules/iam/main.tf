@@ -20,15 +20,25 @@ data "google_service_account" "github_actions" {
   project    = var.project_id
 }
 
-# Permission pour GitHub Actions : créer et gérer les Service Accounts
-# Cette permission doit être ajoutée manuellement avant le premier déploiement
-# gcloud projects add-iam-policy-binding PROJECT_ID \
-#   --member="serviceAccount:spark-github-dev@PROJECT_ID.iam.gserviceaccount.com" \
-#   --role="roles/iam.serviceAccountAdmin"
+# Permissions pour GitHub Actions : créer et gérer les Service Accounts
+# Ces permissions permettent au Service Account GitHub Actions de :
+# - Lire les Service Accounts (nécessaire pour le data source)
+# - Créer et gérer les Service Accounts (nécessaire pour créer dataproc, consumer)
+
+# Permission pour lire les Service Accounts (nécessaire pour le data source)
+resource "google_project_iam_member" "github_actions_iam_viewer" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountViewer"
+  member  = "serviceAccount:${data.google_service_account.github_actions.email}"
+}
+
+# Permission pour créer et gérer les Service Accounts
 resource "google_project_iam_member" "github_actions_iam_admin" {
   project = var.project_id
   role    = "roles/iam.serviceAccountAdmin"
   member  = "serviceAccount:${data.google_service_account.github_actions.email}"
+  
+  depends_on = [google_project_iam_member.github_actions_iam_viewer]
 }
 
 # Service Account pour Dataproc (créé après GitHub Actions)
