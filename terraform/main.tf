@@ -23,7 +23,8 @@ module "apis" {
     "cloudbuild.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
-    "iam.googleapis.com"
+    "iam.googleapis.com",
+    "cloudresourcemanager.googleapis.com"  # Nécessaire pour gérer les permissions IAM
   ]
 }
 
