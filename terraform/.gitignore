@@ -1,0 +1,20 @@
+# Fichiers Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars.backup
+.terraform.tfstate.lock.info
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Fichiers sensibles
+*.pem
+*.key
+secrets.tfvars
+
+
+

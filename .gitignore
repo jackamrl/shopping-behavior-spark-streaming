@@ -1,7 +1,12 @@
-# Scala / SBTdata/
+# Scala / SBT
 target/
 project/target/
 project/project/
+deps/target/
+
+# JARs générés
+*.jar
+!deps/src/**/*.jar
 
 # IntelliJ IDEA
 .idea/
@@ -13,3 +18,16 @@ project/project/
 
 .env
 .dataproc-job.conf
+
+# Service Account Keys (sécurité)
+*bigquery-key.json
+grafana-bigquery-key.json
+*.json.key
+github-actions-key.json
+terraform/github-actions-key.json
+
+# Terraform State (local)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+# Note: .terraform.lock.hcl DOIT être commité pour assurer la cohérence des versions

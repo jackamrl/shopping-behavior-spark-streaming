@@ -1,0 +1,108 @@
+name: Build and Deploy Spark Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'terraform/**'
+      - '.github/workflows/terraform-*.yml'
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+    paths-ignore:
+      - 'terraform/**'
+      - '.github/workflows/terraform-*.yml'
+  workflow_dispatch:  # Permet de déclencher manuellement
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCS_BUCKET: ${{ secrets.GCS_ARTIFACTS_BUCKET }}
+  REGION: europe-west1
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'sbt'
+      
+      - name: Setup Scala
+        uses: olafurpg/setup-scala@v13
+        with:
+          java-version: '11'
+      
+      - name: Cache SBT dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.sbt
+            ~/.ivy2/cache
+            project/target
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/*.sbt') }}-${{ hashFiles('project/build.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-sbt-
+      
+      - name: Build JAR with SBT
+        run: |
+          sbt clean assembly
+      
+      - name: Build dependencies JAR
+        run: |
+          sbt "project deps" assembly
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Upload JAR to GCS
+        run: |
+          VERSION=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          JAR_NAME="spark-streaming-local-assembly-${VERSION}-${TIMESTAMP}.jar"
+          
+          # Upload du JAR principal
+          gsutil cp target/scala-2.12/spark-streaming-local-assembly-*.jar \
+            gs://${GCS_BUCKET}/jars/${JAR_NAME}
+          
+          # Créer un lien symbolique vers latest
+          gsutil cp gs://${GCS_BUCKET}/jars/${JAR_NAME} \
+            gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar
+          
+          echo "JAR uploadé: gs://${GCS_BUCKET}/jars/${JAR_NAME}"
+          echo "JAR_LATEST=gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar" >> $GITHUB_ENV
+      
+      - name: Upload dependencies JAR
+        run: |
+          if [ -f deps/target/scala-2.12/spark-streaming-deps.jar ]; then
+            gsutil cp deps/target/scala-2.12/spark-streaming-deps.jar \
+              gs://${GCS_BUCKET}/jars/deps/spark-streaming-deps.jar
+            echo "Dependencies JAR uploadé"
+          fi
+      
+      - name: Display deployment info
+        run: |
+          echo "✅ Build terminé avec succès"
+          echo "📦 JAR disponible: ${{ env.JAR_LATEST }}"
+          echo "🔧 Pour lancer le job Dataproc, utilisez:"
+          echo "   gcloud dataproc jobs submit spark \\"
+          echo "     --region=${REGION} \\"
+          echo "     --class=com.example.streaming.Consumer \\"
+          echo "     --jars=${{ env.JAR_LATEST }} \\"
+          echo "     -- <PROJECT_ID> <INPUT_PATH> <BIGQUERY_TABLE> <CHECKPOINT_PATH>"
+
+
+
