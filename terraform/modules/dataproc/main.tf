@@ -47,13 +47,32 @@ variable "bigquery_dataset_id" {
   type        = string
 }
 
+variable "use_existing_cluster" {
+  description = "Si true, utilise le cluster existant au lieu d'en créer un nouveau"
+  type        = bool
+  default     = true
+}
+
+variable "use_existing_staging_bucket" {
+  description = "Si true, utilise le bucket de staging existant au lieu d'en créer un nouveau"
+  type        = bool
+  default     = true
+}
+
 locals {
   cluster_name = "${var.pipeline_name}-${var.environment}-cluster"
   staging_bucket = "${var.pipeline_name}-${var.environment}-staging"
 }
 
-# Bucket de staging pour Dataproc
+# Bucket de staging pour Dataproc - Data source pour vérifier si existe
+data "google_storage_bucket" "existing_staging" {
+  count = var.use_existing_staging_bucket ? 1 : 0
+  name  = local.staging_bucket
+}
+
+# Bucket de staging pour Dataproc - Création conditionnelle
 resource "google_storage_bucket" "staging" {
+  count         = var.use_existing_staging_bucket ? 0 : 1
   name          = local.staging_bucket
   location      = var.region
   storage_class = "STANDARD"
@@ -68,14 +87,22 @@ resource "google_storage_bucket" "staging" {
   }
 }
 
-# Cluster Dataproc
+# Local pour utiliser le bucket de staging existant ou créé
+locals {
+  staging_bucket_name = var.use_existing_staging_bucket ? data.google_storage_bucket.existing_staging[0].name : google_storage_bucket.staging[0].name
+}
+
+# Cluster Dataproc - Création conditionnelle
+# Si use_existing_cluster = true, le cluster n'est pas créé par Terraform
+# Il doit être importé dans le state avec: terraform import module.dataproc[0].google_dataproc_cluster.spark_cluster projects/PROJECT_ID/regions/REGION/clusters/CLUSTER_NAME
 resource "google_dataproc_cluster" "spark_cluster" {
+  count    = var.use_existing_cluster ? 0 : 1
   name     = local.cluster_name
   region   = var.region
   project  = var.project_id
   
   cluster_config {
-    staging_bucket = google_storage_bucket.staging.name
+    staging_bucket = local.staging_bucket_name
     
     master_config {
       num_instances = 1
@@ -126,10 +153,17 @@ resource "google_dataproc_cluster" "spark_cluster" {
   }
 }
 
+# Local pour utiliser le cluster existant ou créé
+# Si use_existing_cluster = true, on utilise le nom du cluster (supposé existant)
+# Sinon, on utilise le cluster créé par Terraform
+locals {
+  cluster_id_value = var.use_existing_cluster ? local.cluster_name : google_dataproc_cluster.spark_cluster[0].name
+}
+
 # Outputs
 output "cluster_id" {
   description = "ID du cluster Dataproc"
-  value       = google_dataproc_cluster.spark_cluster.name
+  value       = local.cluster_id_value
 }
 
 output "cluster_region" {
@@ -139,6 +173,6 @@ output "cluster_region" {
 
 output "staging_bucket" {
   description = "Bucket de staging"
-  value       = google_storage_bucket.staging.name
+  value       = local.staging_bucket_name
 }
 
