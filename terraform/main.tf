@@ -38,7 +38,10 @@ module "iam" {
   depends_on = [module.apis]
 }
 
-# Permission supplémentaire pour GitHub Actions : activer les APIs
+# Permissions supplémentaires pour GitHub Actions
+# Ces permissions sont ajoutées après la création du Service Account dans le module IAM
+
+# Permission pour activer les APIs
 resource "google_project_iam_member" "github_actions_serviceusage" {
   project = var.project_id
   role    = "roles/serviceusage.serviceUsageAdmin"
@@ -46,6 +49,9 @@ resource "google_project_iam_member" "github_actions_serviceusage" {
   
   depends_on = [module.iam]
 }
+
+# Permission pour créer et gérer les Service Accounts (déjà dans le module IAM, mais on s'assure qu'elle existe)
+# Note: Cette permission est déjà gérée dans modules/iam/main.tf
 
 # Module pour créer les buckets GCS
 module "gcs" {
