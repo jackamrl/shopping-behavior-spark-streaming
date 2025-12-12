@@ -87,6 +87,15 @@ resource "google_project_iam_member" "github_actions_bigquery_data_editor" {
   depends_on = [module.iam]
 }
 
+# Permission pour créer et gérer les canaux de notification Cloud Monitoring
+resource "google_project_iam_member" "github_actions_monitoring_notification" {
+  project = var.project_id
+  role    = "roles/monitoring.notificationChannelEditor"
+  member  = "serviceAccount:${module.iam.github_actions_service_account_email}"
+  
+  depends_on = [module.iam]
+}
+
 # Module pour créer les buckets GCS
 module "gcs" {
   source = "./modules/gcs"
