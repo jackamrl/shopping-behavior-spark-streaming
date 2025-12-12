@@ -39,6 +39,9 @@ variable "use_existing_dataset" {
   default     = true
 }
 
+# Note: Pour les tables existantes, utilisez terraform import:
+# terraform import module.bigquery.google_bigquery_table.tables["orders"] projects/PROJECT_ID/datasets/DATASET_ID/tables/orders
+
 # Dataset BigQuery - Data source pour vérifier si existe
 data "google_bigquery_dataset" "existing_dataset" {
   count      = var.use_existing_dataset ? 1 : 0
@@ -108,6 +111,9 @@ data "google_project" "project" {
 data "google_client_openid_userinfo" "me" {}
 
 # Tables BigQuery
+# Si use_existing_tables = true, Terraform utilisera les tables existantes
+# (elles doivent être importées dans le state avec: terraform import module.bigquery.google_bigquery_table.tables["orders"] projects/PROJECT_ID/datasets/DATASET_ID/tables/orders)
+# Si use_existing_tables = false, Terraform créera les tables
 resource "google_bigquery_table" "tables" {
   for_each = var.tables
   
@@ -141,6 +147,11 @@ resource "google_bigquery_table" "tables" {
   labels = {
     environment = "production"
     pipeline    = "spark-streaming"
+  }
+  
+  # Ignorer les changements de schéma pour les tables existantes (évite les erreurs si le schéma diffère légèrement)
+  lifecycle {
+    ignore_changes = [schema]
   }
   
   depends_on = [local.dataset_id]
