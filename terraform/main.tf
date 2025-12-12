@@ -38,6 +38,15 @@ module "iam" {
   depends_on = [module.apis]
 }
 
+# Permission supplémentaire pour GitHub Actions : activer les APIs
+resource "google_project_iam_member" "github_actions_serviceusage" {
+  project = var.project_id
+  role    = "roles/serviceusage.serviceUsageAdmin"
+  member  = "serviceAccount:${module.iam.github_actions_service_account_email}"
+  
+  depends_on = [module.iam]
+}
+
 # Module pour créer les buckets GCS
 module "gcs" {
   source = "./modules/gcs"
@@ -102,6 +111,4 @@ module "monitoring" {
   
   depends_on = [module.bigquery]
 }
-
-
 
