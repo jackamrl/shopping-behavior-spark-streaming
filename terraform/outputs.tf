@@ -32,11 +32,13 @@ output "service_accounts" {
   }
 }
 
-output "github_actions_key" {
-  description = "Clé JSON du Service Account GitHub Actions (à ajouter dans GitHub Secrets)"
-  value       = module.iam.github_actions_key
-  sensitive   = true
-}
+# Note: La clé JSON du Service Account GitHub Actions doit être créée manuellement
+# et ajoutée dans GitHub Secrets (GCP_SA_KEY)
+# output "github_actions_key" {
+#   description = "Clé JSON du Service Account GitHub Actions (à ajouter dans GitHub Secrets)"
+#   value       = module.iam.github_actions_key
+#   sensitive   = true
+# }
 
 output "configuration_summary" {
   description = "Résumé de la configuration déployée"
