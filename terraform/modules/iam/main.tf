@@ -41,22 +41,18 @@ resource "google_project_iam_member" "github_actions_iam_admin" {
   depends_on = [google_project_iam_member.github_actions_iam_viewer]
 }
 
-# Service Account pour Dataproc (créé après GitHub Actions)
-resource "google_service_account" "dataproc" {
-  account_id   = "spark-dataproc-${var.environment}"
-  display_name = "Service Account pour Dataproc - ${var.environment}"
-  project      = var.project_id
-  
-  depends_on = [google_project_iam_member.github_actions_iam_admin]
+# Service Account pour Dataproc (existant, créé manuellement)
+# On utilise un data source car ce Service Account existe déjà
+data "google_service_account" "dataproc" {
+  account_id = "spark-dataproc-${var.environment}"
+  project    = var.project_id
 }
 
-# Service Account pour le Consumer Spark (créé après GitHub Actions)
-resource "google_service_account" "consumer" {
-  account_id   = "spark-consumer-${var.environment}"
-  display_name = "Service Account pour Consumer Spark - ${var.environment}"
-  project      = var.project_id
-  
-  depends_on = [google_project_iam_member.github_actions_iam_admin]
+# Service Account pour le Consumer Spark (existant, créé manuellement)
+# On utilise un data source car ce Service Account existe déjà
+data "google_service_account" "consumer" {
+  account_id = "spark-consumer-${var.environment}"
+  project    = var.project_id
 }
 
 # Clé JSON pour GitHub Actions (à ajouter dans GitHub Secrets)
@@ -73,32 +69,32 @@ resource "google_service_account" "consumer" {
 resource "google_project_iam_member" "dataproc_worker" {
   project = var.project_id
   role    = "roles/dataproc.worker"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${data.google_service_account.dataproc.email}"
 }
 
 resource "google_project_iam_member" "dataproc_storage" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${data.google_service_account.dataproc.email}"
 }
 
 resource "google_project_iam_member" "dataproc_bigquery" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${data.google_service_account.dataproc.email}"
 }
 
 # Permissions Consumer
 resource "google_project_iam_member" "consumer_bigquery" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.consumer.email}"
+  member  = "serviceAccount:${data.google_service_account.consumer.email}"
 }
 
 resource "google_project_iam_member" "consumer_storage" {
   project = var.project_id
   role    = "roles/storage.objectViewer"
-  member  = "serviceAccount:${google_service_account.consumer.email}"
+  member  = "serviceAccount:${data.google_service_account.consumer.email}"
 }
 
 # Permissions GitHub Actions
@@ -117,12 +113,12 @@ resource "google_project_iam_member" "github_actions_dataproc" {
 # Outputs
 output "dataproc_service_account_email" {
   description = "Email du Service Account Dataproc"
-  value       = google_service_account.dataproc.email
+  value       = data.google_service_account.dataproc.email
 }
 
 output "consumer_service_account_email" {
   description = "Email du Service Account Consumer"
-  value       = google_service_account.consumer.email
+  value       = data.google_service_account.consumer.email
 }
 
 output "github_actions_service_account_email" {
