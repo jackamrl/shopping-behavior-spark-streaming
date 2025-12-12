@@ -13,21 +13,22 @@ variable "environment" {
   type        = string
 }
 
-# Service Account pour GitHub Actions (créé en premier)
-# Ce Service Account doit exister avant les autres car il sera utilisé pour créer les autres
-resource "google_service_account" "github_actions" {
-  account_id   = "spark-github-${var.environment}"
-  display_name = "Service Account pour GitHub Actions - ${var.environment}"
-  project      = var.project_id
+# Service Account pour GitHub Actions (existant, créé manuellement)
+# On utilise un data source car ce Service Account existe déjà et est utilisé pour authentifier Terraform
+data "google_service_account" "github_actions" {
+  account_id = "spark-github-${var.environment}"
+  project    = var.project_id
 }
 
 # Permission pour GitHub Actions : créer et gérer les Service Accounts
+# Cette permission doit être ajoutée manuellement avant le premier déploiement
+# gcloud projects add-iam-policy-binding PROJECT_ID \
+#   --member="serviceAccount:spark-github-dev@PROJECT_ID.iam.gserviceaccount.com" \
+#   --role="roles/iam.serviceAccountAdmin"
 resource "google_project_iam_member" "github_actions_iam_admin" {
   project = var.project_id
   role    = "roles/iam.serviceAccountAdmin"
-  member  = "serviceAccount:${google_service_account.github_actions.email}"
-  
-  depends_on = [google_service_account.github_actions]
+  member  = "serviceAccount:${data.google_service_account.github_actions.email}"
 }
 
 # Service Account pour Dataproc (créé après GitHub Actions)
@@ -49,9 +50,14 @@ resource "google_service_account" "consumer" {
 }
 
 # Clé JSON pour GitHub Actions (à ajouter dans GitHub Secrets)
-resource "google_service_account_key" "github_actions_key" {
-  service_account_id = google_service_account.github_actions.name
-}
+# Note: La clé doit être créée manuellement et ajoutée dans GitHub Secrets
+# gcloud iam service-accounts keys create KEY_FILE \
+#   --iam-account=spark-github-dev@PROJECT_ID.iam.gserviceaccount.com
+# 
+# Cette ressource est commentée car la clé existe déjà
+# resource "google_service_account_key" "github_actions_key" {
+#   service_account_id = data.google_service_account.github_actions.name
+# }
 
 # Permissions Dataproc
 resource "google_project_iam_member" "dataproc_worker" {
@@ -89,13 +95,13 @@ resource "google_project_iam_member" "consumer_storage" {
 resource "google_project_iam_member" "github_actions_storage" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.github_actions.email}"
+  member  = "serviceAccount:${data.google_service_account.github_actions.email}"
 }
 
 resource "google_project_iam_member" "github_actions_dataproc" {
   project = var.project_id
   role    = "roles/dataproc.editor"
-  member  = "serviceAccount:${google_service_account.github_actions.email}"
+  member  = "serviceAccount:${data.google_service_account.github_actions.email}"
 }
 
 # Outputs
@@ -111,14 +117,15 @@ output "consumer_service_account_email" {
 
 output "github_actions_service_account_email" {
   description = "Email du Service Account GitHub Actions"
-  value       = google_service_account.github_actions.email
+  value       = data.google_service_account.github_actions.email
 }
 
-output "github_actions_key" {
-  description = "Clé JSON du Service Account GitHub Actions (base64)"
-  value       = google_service_account_key.github_actions_key.private_key
-  sensitive   = true
-}
+# Note: La clé JSON doit être créée manuellement
+# output "github_actions_key" {
+#   description = "Clé JSON du Service Account GitHub Actions (base64)"
+#   value       = google_service_account_key.github_actions_key.private_key
+#   sensitive   = true
+# }
 
 #yo
 
