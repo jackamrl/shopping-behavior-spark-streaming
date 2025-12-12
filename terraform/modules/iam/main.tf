@@ -13,25 +13,39 @@ variable "environment" {
   type        = string
 }
 
-# Service Account pour Dataproc
-resource "google_service_account" "dataproc" {
-  account_id   = "spark-dataproc-${var.environment}"
-  display_name = "Service Account pour Dataproc - ${var.environment}"
-  project      = var.project_id
-}
-
-# Service Account pour le Consumer Spark
-resource "google_service_account" "consumer" {
-  account_id   = "spark-consumer-${var.environment}"
-  display_name = "Service Account pour Consumer Spark - ${var.environment}"
-  project      = var.project_id
-}
-
-# Service Account pour GitHub Actions
+# Service Account pour GitHub Actions (créé en premier)
+# Ce Service Account doit exister avant les autres car il sera utilisé pour créer les autres
 resource "google_service_account" "github_actions" {
   account_id   = "spark-github-${var.environment}"
   display_name = "Service Account pour GitHub Actions - ${var.environment}"
   project      = var.project_id
+}
+
+# Permission pour GitHub Actions : créer et gérer les Service Accounts
+resource "google_project_iam_member" "github_actions_iam_admin" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountAdmin"
+  member  = "serviceAccount:${google_service_account.github_actions.email}"
+  
+  depends_on = [google_service_account.github_actions]
+}
+
+# Service Account pour Dataproc (créé après GitHub Actions)
+resource "google_service_account" "dataproc" {
+  account_id   = "spark-dataproc-${var.environment}"
+  display_name = "Service Account pour Dataproc - ${var.environment}"
+  project      = var.project_id
+  
+  depends_on = [google_project_iam_member.github_actions_iam_admin]
+}
+
+# Service Account pour le Consumer Spark (créé après GitHub Actions)
+resource "google_service_account" "consumer" {
+  account_id   = "spark-consumer-${var.environment}"
+  display_name = "Service Account pour Consumer Spark - ${var.environment}"
+  project      = var.project_id
+  
+  depends_on = [google_project_iam_member.github_actions_iam_admin]
 }
 
 # Clé JSON pour GitHub Actions (à ajouter dans GitHub Secrets)
