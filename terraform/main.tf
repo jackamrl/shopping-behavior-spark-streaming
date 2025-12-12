@@ -78,6 +78,15 @@ resource "google_project_iam_member" "github_actions_bigquery_user" {
   depends_on = [module.iam]
 }
 
+# Permission pour créer et gérer les tables BigQuery
+resource "google_project_iam_member" "github_actions_bigquery_data_editor" {
+  project = var.project_id
+  role    = "roles/bigquery.dataEditor"
+  member  = "serviceAccount:${module.iam.github_actions_service_account_email}"
+  
+  depends_on = [module.iam]
+}
+
 # Module pour créer les buckets GCS
 module "gcs" {
   source = "./modules/gcs"
