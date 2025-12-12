@@ -1,12 +1,21 @@
 name: Build and Deploy Spark Pipeline
 
 on:
+  # Se déclenche après le succès de Terraform Apply
+  workflow_run:
+    workflows: ["Terraform Apply"]
+    types:
+      - completed
+    branches:
+      - main
+  # Se déclenche aussi sur push vers main (sauf changements Terraform)
   push:
     branches:
       - main
     paths-ignore:
       - 'terraform/**'
       - '.github/workflows/terraform-*.yml'
+  # Se déclenche sur merge de PR vers main (sauf changements Terraform)
   pull_request:
     types: [closed]
     branches:
@@ -24,10 +33,22 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Ne s'exécute que si :
+    # - C'est un push vers main (sauf Terraform)
+    # - C'est un merge de PR vers main (sauf Terraform)
+    # - C'est déclenché par workflow_run ET le workflow Terraform Apply a réussi
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Si déclenché par workflow_run, utiliser le commit du workflow qui a déclenché
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          sha: ${{ github.event.workflow_run.head_sha || github.sha }}
       
       - name: Set up JDK 11
         uses: actions/setup-java@v4
