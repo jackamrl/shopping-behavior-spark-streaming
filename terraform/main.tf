@@ -60,6 +60,15 @@ resource "google_project_iam_member" "github_actions_serviceusage" {
   depends_on = [module.iam]
 }
 
+# Permission pour gérer les buckets GCS (créer, modifier, supprimer)
+resource "google_project_iam_member" "github_actions_storage_admin" {
+  project = var.project_id
+  role    = "roles/storage.admin"
+  member  = "serviceAccount:${module.iam.github_actions_service_account_email}"
+  
+  depends_on = [module.iam]
+}
+
 # Module pour créer les buckets GCS
 module "gcs" {
   source = "./modules/gcs"
@@ -101,6 +110,10 @@ module "dataproc" {
   environment   = var.environment
   
   cluster_config = var.dataproc_cluster_config
+  
+  # Utiliser les ressources existantes par défaut
+  use_existing_cluster       = true
+  use_existing_staging_bucket = true
   
   service_account = module.iam.dataproc_service_account_email
   
