@@ -104,6 +104,7 @@ module "gcs" {
   pipeline_name = var.pipeline_name
   environment   = var.environment
   buckets       = var.gcs_buckets
+  use_existing_buckets = var.use_existing_buckets
   
   dataproc_service_account = module.iam.dataproc_service_account_email
   consumer_service_account  = module.iam.consumer_service_account_email
@@ -119,6 +120,7 @@ module "bigquery" {
   project_id    = var.project_id
   dataset_config = var.bigquery_dataset
   tables        = var.bigquery_tables
+  use_existing_dataset = var.use_existing_dataset
   
   consumer_service_account = module.iam.consumer_service_account_email
   

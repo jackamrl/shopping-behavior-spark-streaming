@@ -108,5 +108,18 @@ variable "vpc_name" {
   default     = ""
 }
 
+# Variables pour utiliser les ressources existantes
+variable "use_existing_dataset" {
+  description = "Si true, utilise le dataset BigQuery existant au lieu d'en créer un nouveau"
+  type        = bool
+  default     = false
+}
+
+variable "use_existing_buckets" {
+  description = "Si true, utilise les buckets GCS existants au lieu d'en créer de nouveaux"
+  type        = bool
+  default     = false
+}
+
 
 
