@@ -27,7 +27,6 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCS_BUCKET: ${{ secrets.GCS_ARTIFACTS_BUCKET }}
   REGION: europe-west1
 
 jobs:
@@ -91,9 +90,15 @@ jobs:
       
       - name: Upload JAR to GCS
         run: |
+          # Construction du nom du bucket (remplacement des points par des tirets dans le project_id)
+          PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-artifacts"
+          
           VERSION=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           JAR_NAME="spark-streaming-local-assembly-${VERSION}-${TIMESTAMP}.jar"
+          
+          echo "📦 Upload du JAR vers: gs://${GCS_BUCKET}/jars/${JAR_NAME}"
           
           # Upload du JAR principal
           gsutil cp target/scala-2.12/spark-streaming-local-assembly-*.jar \
@@ -103,15 +108,22 @@ jobs:
           gsutil cp gs://${GCS_BUCKET}/jars/${JAR_NAME} \
             gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar
           
-          echo "JAR uploadé: gs://${GCS_BUCKET}/jars/${JAR_NAME}"
+          echo "✅ JAR uploadé: gs://${GCS_BUCKET}/jars/${JAR_NAME}"
           echo "JAR_LATEST=gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar" >> $GITHUB_ENV
       
       - name: Upload dependencies JAR
         run: |
+          # Construction du nom du bucket (remplacement des points par des tirets dans le project_id)
+          PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-artifacts"
+          
           if [ -f deps/target/scala-2.12/spark-streaming-deps.jar ]; then
+            echo "📦 Upload des dépendances vers: gs://${GCS_BUCKET}/jars/deps/"
             gsutil cp deps/target/scala-2.12/spark-streaming-deps.jar \
               gs://${GCS_BUCKET}/jars/deps/spark-streaming-deps.jar
-            echo "Dependencies JAR uploadé"
+            echo "✅ Dépendances uploadées"
+          else
+            echo "⚠️  Fichier de dépendances non trouvé, ignoré"
           fi
       
       - name: Display deployment info
