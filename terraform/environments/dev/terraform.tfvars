@@ -44,6 +44,11 @@ dataproc_cluster_config = {
   image_version  = "2.1-debian11"
 }
 
+# Configuration pour utiliser les ressources existantes ou les créer
+# Pour un nouveau projet, mettre à false pour créer les ressources
+use_existing_dataset = false
+use_existing_buckets = false
+
 # Configuration BigQuery
 bigquery_dataset = {
   dataset_id    = "shopping_dev"
