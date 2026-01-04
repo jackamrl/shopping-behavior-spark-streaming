@@ -35,6 +35,7 @@ module "iam" {
   project_id    = var.project_id
   pipeline_name = var.pipeline_name
   environment   = var.environment
+  use_existing_service_accounts = var.use_existing_service_accounts
   
   depends_on = [module.apis]
 }

@@ -13,6 +13,12 @@ variable "environment" {
   type        = string
 }
 
+variable "use_existing_service_accounts" {
+  description = "Si true, utilise les Service Accounts existants au lieu d'en créer de nouveaux"
+  type        = bool
+  default     = true
+}
+
 # Service Account pour GitHub Actions (existant, créé manuellement)
 # On utilise un data source car ce Service Account existe déjà et est utilisé pour authentifier Terraform
 data "google_service_account" "github_actions" {
@@ -41,8 +47,16 @@ resource "google_project_iam_member" "github_actions_iam_admin" {
   depends_on = [google_project_iam_member.github_actions_iam_viewer]
 }
 
-# Service Account pour Dataproc - Création par Terraform
+# Service Account pour Dataproc - Data source pour vérifier si existe
+data "google_service_account" "existing_dataproc" {
+  count      = var.use_existing_service_accounts ? 1 : 0
+  account_id = "spark-dataproc-${var.environment}"
+  project    = var.project_id
+}
+
+# Service Account pour Dataproc - Création conditionnelle
 resource "google_service_account" "dataproc" {
+  count        = var.use_existing_service_accounts ? 0 : 1
   account_id   = "spark-dataproc-${var.environment}"
   display_name = "Service Account pour Dataproc - ${var.environment}"
   project      = var.project_id
@@ -50,13 +64,27 @@ resource "google_service_account" "dataproc" {
   depends_on = [google_project_iam_member.github_actions_iam_admin]
 }
 
-# Service Account pour le Consumer Spark - Création par Terraform
+# Service Account pour le Consumer Spark - Data source pour vérifier si existe
+data "google_service_account" "existing_consumer" {
+  count      = var.use_existing_service_accounts ? 1 : 0
+  account_id = "spark-consumer-${var.environment}"
+  project    = var.project_id
+}
+
+# Service Account pour le Consumer Spark - Création conditionnelle
 resource "google_service_account" "consumer" {
+  count        = var.use_existing_service_accounts ? 0 : 1
   account_id   = "spark-consumer-${var.environment}"
   display_name = "Service Account pour Consumer Spark - ${var.environment}"
   project      = var.project_id
   
   depends_on = [google_project_iam_member.github_actions_iam_admin]
+}
+
+# Local pour utiliser le Service Account existant ou créé
+locals {
+  dataproc_service_account_email = var.use_existing_service_accounts ? data.google_service_account.existing_dataproc[0].email : google_service_account.dataproc[0].email
+  consumer_service_account_email = var.use_existing_service_accounts ? data.google_service_account.existing_consumer[0].email : google_service_account.consumer[0].email
 }
 
 # Clé JSON pour GitHub Actions (à ajouter dans GitHub Secrets)
@@ -73,32 +101,32 @@ resource "google_service_account" "consumer" {
 resource "google_project_iam_member" "dataproc_worker" {
   project = var.project_id
   role    = "roles/dataproc.worker"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 
 resource "google_project_iam_member" "dataproc_storage" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 
 resource "google_project_iam_member" "dataproc_bigquery" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.dataproc.email}"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 
 # Permissions Consumer
 resource "google_project_iam_member" "consumer_bigquery" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.consumer.email}"
+  member  = "serviceAccount:${local.consumer_service_account_email}"
 }
 
 resource "google_project_iam_member" "consumer_storage" {
   project = var.project_id
   role    = "roles/storage.objectViewer"
-  member  = "serviceAccount:${google_service_account.consumer.email}"
+  member  = "serviceAccount:${local.consumer_service_account_email}"
 }
 
 # Permissions GitHub Actions
@@ -117,12 +145,12 @@ resource "google_project_iam_member" "github_actions_dataproc" {
 # Outputs
 output "dataproc_service_account_email" {
   description = "Email du Service Account Dataproc"
-  value       = google_service_account.dataproc.email
+  value       = local.dataproc_service_account_email
 }
 
 output "consumer_service_account_email" {
   description = "Email du Service Account Consumer"
-  value       = google_service_account.consumer.email
+  value       = local.consumer_service_account_email
 }
 
 output "github_actions_service_account_email" {

@@ -120,6 +120,12 @@ variable "use_existing_buckets" {
   type        = bool
   default     = false
 }
+
+variable "use_existing_service_accounts" {
+  description = "Si true, utilise les Service Accounts existants au lieu d'en créer de nouveaux"
+  type        = bool
+  default     = true
+}
 ##ok
 
 
