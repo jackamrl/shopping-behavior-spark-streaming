@@ -45,11 +45,18 @@ dataproc_cluster_config = {
 }
 
 # Configuration pour utiliser les ressources existantes ou les créer
-# Pour un nouveau projet, mettre à false pour créer les ressources
-# Pour un projet existant, mettre à true pour utiliser les ressources existantes
-use_existing_dataset = false
-use_existing_buckets = false
-use_existing_service_accounts = false  # Mettre à true si les Service Accounts existent déjà
+# 
+# RÈGLE : Si la ressource EXISTE DÉJÀ → true, sinon → false
+#
+# Pour vérifier si une ressource existe :
+# - Service Accounts: gcloud iam service-accounts list --project=spark-streaming-483317
+# - Buckets: gsutil ls -p spark-streaming-483317
+# - Dataset: bq ls --project_id=spark-streaming-483317
+#
+# Voir TERRAFORM_USE_EXISTING_GUIDE.md pour plus de détails
+use_existing_dataset = false              # false = créer, true = utiliser l'existant
+use_existing_buckets = false              # false = créer, true = utiliser l'existant
+use_existing_service_accounts = true      # false = créer, true = utiliser l'existant (existent déjà)
 
 # Configuration BigQuery
 bigquery_dataset = {
