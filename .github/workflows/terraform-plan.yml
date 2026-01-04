@@ -38,6 +38,16 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
       
+      - name: Detect Existing Resources
+        working-directory: terraform
+        run: |
+          chmod +x scripts/detect-existing-resources.sh
+          ./scripts/detect-existing-resources.sh \
+            ${{ env.PROJECT_ID }} \
+            dev \
+            environments/dev/terraform.tfvars
+        continue-on-error: true  # Continue même si la détection échoue
+      
       - name: Terraform Init
         working-directory: terraform
         run: |
