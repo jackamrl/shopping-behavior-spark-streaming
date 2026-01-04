@@ -67,6 +67,21 @@ jobs:
         run: |
           terraform validate
       
+      - name: Import Existing BigQuery Tables
+        working-directory: terraform
+        run: |
+          # Importer la table orders si elle existe
+          if bq show --project_id=${{ env.PROJECT_ID }} "${{ env.PROJECT_ID }}:shopping_dev.orders" >/dev/null 2>&1; then
+            echo "📊 Import de la table orders existante dans Terraform..."
+            terraform import \
+              -var-file=environments/dev/terraform.tfvars \
+              'module.bigquery.google_bigquery_table.tables["orders"]' \
+              "projects/${{ env.PROJECT_ID }}/datasets/shopping_dev/tables/orders" || echo "⚠️  Import échoué ou table déjà dans le state"
+          else
+            echo "ℹ️  Table orders n'existe pas, sera créée par Terraform"
+          fi
+        continue-on-error: true
+      
       - name: Terraform Plan
         working-directory: terraform
         run: |

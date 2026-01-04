@@ -69,9 +69,20 @@ echo "🗄️  Vérification du dataset BigQuery..."
 if check_dataset "shopping_${ENVIRONMENT}" "$PROJECT_ID"; then
     echo "  ✅ Dataset existe"
     USE_EXISTING_DATASET="true"
+    
+    # Vérifier si la table orders existe
+    echo "📊 Vérification de la table orders..."
+    if bq show --project_id="$PROJECT_ID" "${PROJECT_ID}:shopping_${ENVIRONMENT}.orders" >/dev/null 2>&1; then
+        echo "  ✅ Table orders existe - sera importée dans Terraform"
+        TABLE_EXISTS="true"
+    else
+        echo "  ❌ Table orders n'existe pas"
+        TABLE_EXISTS="false"
+    fi
 else
     echo "  ❌ Dataset n'existe pas"
     USE_EXISTING_DATASET="false"
+    TABLE_EXISTS="false"
 fi
 
 echo ""
