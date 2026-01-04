@@ -273,9 +273,17 @@ resource "google_storage_bucket_iam_member" "checkpoint_dataproc" {
 }
 
 # IAM pour le bucket d'artefacts
+# Permission objectAdmin pour uploader les JARs
 resource "google_storage_bucket_iam_member" "artifacts_github_actions" {
   bucket = local.artifacts_bucket_name
   role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${var.github_actions_service_account}"
+}
+
+# Permission supplémentaire pour lister les objets (nécessaire pour gsutil)
+resource "google_storage_bucket_iam_member" "artifacts_github_actions_legacy_reader" {
+  bucket = local.artifacts_bucket_name
+  role   = "roles/storage.legacyBucketReader"
   member = "serviceAccount:${var.github_actions_service_account}"
 }
 
