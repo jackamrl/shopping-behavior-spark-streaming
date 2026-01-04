@@ -46,8 +46,10 @@ dataproc_cluster_config = {
 
 # Configuration pour utiliser les ressources existantes ou les créer
 # Pour un nouveau projet, mettre à false pour créer les ressources
+# Pour un projet existant, mettre à true pour utiliser les ressources existantes
 use_existing_dataset = false
 use_existing_buckets = false
+use_existing_service_accounts = false  # Mettre à true si les Service Accounts existent déjà
 
 # Configuration BigQuery
 bigquery_dataset = {
