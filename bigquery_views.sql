@@ -1,5 +1,5 @@
 -- Vue 1: Préférences par tranche d'âge
-CREATE OR REPLACE VIEW `neural-cortex-480815-i3.shopping.v_age_preferences` AS
+CREATE OR REPLACE VIEW `spark-streaming-483317.shopping.v_age_preferences` AS
 WITH age_buckets AS (
   SELECT
     CASE
@@ -13,7 +13,7 @@ WITH age_buckets AS (
     category,
     purchase_amount_usd,
     review_rating
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
 ),
 age_stats AS (
   SELECT
@@ -43,14 +43,14 @@ FROM age_stats a
 LEFT JOIN top_categories t ON a.age_bucket = t.age_bucket;
 
 -- Vue 2: Préférences par genre
-CREATE OR REPLACE VIEW `neural-cortex-480815-i3.shopping.v_gender_preferences` AS
+CREATE OR REPLACE VIEW `spark-streaming-483317.shopping.v_gender_preferences` AS
 WITH gender_stats AS (
   SELECT
     gender,
     COUNT(*) AS orders,
     AVG(purchase_amount_usd) AS avg_spend,
     AVG(review_rating) AS avg_rating
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
   GROUP BY gender
 ),
 top_categories AS (
@@ -58,7 +58,7 @@ top_categories AS (
     gender,
     category,
     COUNT(*) AS category_count
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
   GROUP BY gender, category
   QUALIFY ROW_NUMBER() OVER (PARTITION BY gender ORDER BY COUNT(*) DESC) = 1
 )
@@ -72,13 +72,13 @@ FROM gender_stats g
 LEFT JOIN top_categories t ON g.gender = t.gender;
 
 -- Vue 3: Préférences par localisation
-CREATE OR REPLACE VIEW `neural-cortex-480815-i3.shopping.v_location_preferences` AS
+CREATE OR REPLACE VIEW `spark-streaming-483317.shopping.v_location_preferences` AS
 WITH location_stats AS (
   SELECT
     location,
     COUNT(*) AS orders,
     AVG(purchase_amount_usd) AS avg_spend
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
   GROUP BY location
 ),
 top_categories AS (
@@ -86,7 +86,7 @@ top_categories AS (
     location,
     category,
     COUNT(*) AS category_count
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
   GROUP BY location, category
   QUALIFY ROW_NUMBER() OVER (PARTITION BY location ORDER BY COUNT(*) DESC) <= 3
 )
@@ -100,7 +100,7 @@ LEFT JOIN top_categories t ON l.location = t.location
 GROUP BY l.location, l.orders, l.avg_spend;
 
 -- Vue 4: Analyse combinée âge x genre x catégorie
-CREATE OR REPLACE VIEW `neural-cortex-480815-i3.shopping.v_age_gender_category` AS
+CREATE OR REPLACE VIEW `spark-streaming-483317.shopping.v_age_gender_category` AS
 WITH base AS (
   SELECT
     CASE
@@ -114,7 +114,7 @@ WITH base AS (
     gender,
     category,
     purchase_amount_usd
-  FROM `neural-cortex-480815-i3.shopping.orders`
+  FROM `spark-streaming-483317.shopping.orders`
 )
 SELECT
   age_bucket,

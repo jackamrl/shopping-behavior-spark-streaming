@@ -1,5 +1,5 @@
 # Configuration pour l'environnement DEV
-project_id   = "neural-cortex-480815-i3"
+project_id   = "spark-streaming-483317"
 region       = "europe-west1"
 zone         = "europe-west1-b"
 environment  = "dev"
