@@ -11,7 +11,7 @@ lazy val deps = (project in file("deps"))
       "io.grpc" % "grpc-netty-shaded" % "1.61.0"
     ),
     assembly / assemblyJarName := "spark-streaming-deps.jar",
-    assemblyMergeStrategy in assembly := {
+    assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "services", xs @ _*) => MergeStrategy.filterDistinctLines
       case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
       case PathList("META-INF", xs @ _*) => MergeStrategy.first
@@ -70,7 +70,7 @@ lazy val root = (project in file("."))
         name.contains("scala-library")
       }
     },
-    assemblyMergeStrategy in assembly := {
+    assembly / assemblyMergeStrategy := {
       // Exclure les classes v2 du package bigquery.v2
       case PathList("com", "google", "cloud", "spark", "bigquery", "v2", xs @ _*) => MergeStrategy.discard
       // Filtrer les services pour exclure les références v2
