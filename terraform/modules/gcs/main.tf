@@ -55,7 +55,9 @@ variable "use_existing_buckets" {
 }
 
 locals {
-  bucket_prefix = "${var.pipeline_name}-${var.environment}"
+  # Les noms de buckets GCS doivent être globalement uniques dans tout GCP
+  # On ajoute le project_id pour garantir l'unicité
+  bucket_prefix = "${var.pipeline_name}-${var.environment}-${replace(var.project_id, ".", "-")}"
 }
 
 # Bucket pour les données d'entrée - Data source pour vérifier si existe
