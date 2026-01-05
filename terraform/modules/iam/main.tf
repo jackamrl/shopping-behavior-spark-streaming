@@ -97,22 +97,49 @@ locals {
 #   service_account_id = data.google_service_account.github_actions.name
 # }
 
-# Permissions Dataproc
+# Permissions Dataproc - Permissions complètes pour exécuter des jobs Spark
 resource "google_project_iam_member" "dataproc_worker" {
   project = var.project_id
   role    = "roles/dataproc.worker"
   member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 
-resource "google_project_iam_member" "dataproc_storage" {
+# Permissions Storage - Lecture et écriture complètes
+resource "google_project_iam_member" "dataproc_storage_admin" {
   project = var.project_id
   role    = "roles/storage.objectAdmin"
   member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 
-resource "google_project_iam_member" "dataproc_bigquery" {
+resource "google_project_iam_member" "dataproc_storage_viewer" {
+  project = var.project_id
+  role    = "roles/storage.objectViewer"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
+}
+
+# Permissions BigQuery - Édition des données et exécution de jobs
+resource "google_project_iam_member" "dataproc_bigquery_data_editor" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
+}
+
+resource "google_project_iam_member" "dataproc_bigquery_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
+}
+
+resource "google_project_iam_member" "dataproc_bigquery_user" {
+  project = var.project_id
+  role    = "roles/bigquery.user"
+  member  = "serviceAccount:${local.dataproc_service_account_email}"
+}
+
+# Permissions pour lire les métadonnées des datasets
+resource "google_project_iam_member" "dataproc_bigquery_metadata_viewer" {
+  project = var.project_id
+  role    = "roles/bigquery.metadataViewer"
   member  = "serviceAccount:${local.dataproc_service_account_email}"
 }
 

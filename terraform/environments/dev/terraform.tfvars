@@ -36,9 +36,11 @@ gcs_buckets = {
   }
 }
 
-# Configuration Dataproc (désactivé par défaut - utiliser serverless)
+# Configuration Dataproc
+# Note: Si enable_cluster = false, utilisez Dataproc Serverless (recommandé)
+# Si enable_cluster = true, un cluster permanent sera créé
 dataproc_cluster_config = {
-  enable_cluster = false  # Mettre à true pour créer un cluster permanent
+  enable_cluster = true   # true = créer un cluster permanent, false = utiliser serverless
   machine_type   = "n1-standard-2"
   num_instances  = 2
   image_version  = "2.1-debian11"
