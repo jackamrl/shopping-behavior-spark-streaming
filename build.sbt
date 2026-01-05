@@ -30,14 +30,16 @@ lazy val root = (project in file("."))
 
       // Google Cloud SDK pour dev local / utilitaires
       "com.google.cloud.bigdataoss" % "gcs-connector" % "hadoop3-2.2.21" % Provided,
+      // google-cloud-storage nécessaire pour le Producer local (pas Provided)
       "com.google.cloud" % "google-cloud-storage" % "2.57.0",
-      "com.google.cloud" % "google-cloud-pubsub" % "1.141.4",
+      // google-cloud-pubsub (peut rester Provided si non utilisé localement)
+      "com.google.cloud" % "google-cloud-pubsub" % "1.141.4" % Provided,
       
-      // Connecteur Spark pour BigQuery (inclus dans l'assembly - inclut déjà google-cloud-bigquery)
-      "com.google.cloud.spark" %% "spark-bigquery-with-dependencies" % "0.32.2",
+      // Connecteur Spark pour BigQuery (sera ajouté via --packages sur Dataproc)
+      "com.google.cloud.spark" %% "spark-bigquery-with-dependencies" % "0.32.2" % Provided,
       
-      // gRPC pour Pub/Sub (nécessaire pour le client Pub/Sub)
-      "io.grpc" % "grpc-netty-shaded" % "1.61.0",
+      // gRPC pour Pub/Sub (sera inclus dans spark-bigquery-with-dependencies)
+      "io.grpc" % "grpc-netty-shaded" % "1.61.0" % Provided,
 
       // dotenv pour tests locaux (utilisé par le Producer uniquement)
       "io.github.cdimascio" % "dotenv-java" % "2.2.2",
@@ -83,5 +85,8 @@ lazy val root = (project in file("."))
       case "module-info.class" => MergeStrategy.discard
       case _ => MergeStrategy.first
     },
-    assembly / mainClass := Some("com.example.streaming.Consumer")
+    assembly / mainClass := Some("com.example.streaming.Consumer"),
+    // Configuration pour le JAR thin (seulement notre code)
+    // Les dépendances Google Cloud seront ajoutées via --jars ou --packages
+    packageBin / mainClass := Some("com.example.streaming.Consumer")
   )

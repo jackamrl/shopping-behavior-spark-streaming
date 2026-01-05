@@ -6,17 +6,18 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import scala.util.Try
 
 /**
- * Consumer Batch périodique : GCS (CSV) -> BigQuery.
- * - Lecture batch des nouveaux fichiers CSV déposés dans un dossier GCS
- * - Écriture append dans BigQuery avec checkpointing simple (fichier texte)
- * - Traitement périodique toutes les 10 secondes
+ * Consumer Streaming : GCS (CSV) -> BigQuery avec Spark Structured Streaming.
+ * - Lecture streaming des nouveaux fichiers CSV déposés dans un dossier GCS
+ * - Détection automatique des nouveaux fichiers (micro-batch)
+ * - Écriture append dans BigQuery avec checkpointing de streaming
+ * - Protection anti-doublons intégrée
  */
 object Consumer {
 
   def main(args: Array[String]): Unit = {
 
     val spark = SparkSession.builder()
-      .appName("GcsCsvToBigQueryBatch")
+      .appName("GcsCsvToBigQueryStreaming")
       .getOrCreate()
 
     def getConfig(key: String, argIndex: Int): String = {
@@ -48,183 +49,241 @@ object Consumer {
     require(finalBigQueryTable.nonEmpty, "BIGQUERY_TABLE manquant")
     require(finalCheckpointPath.nonEmpty, "CHECKPOINT_PATH manquant")
 
-    println(s"Lecture GCS path = $finalInputPath -> BigQuery table = $finalBigQueryTable")
+    println(s"🚀 Démarrage du Consumer Streaming")
+    println(s"   Input: $finalInputPath")
+    println(s"   Output: $finalBigQueryTable")
+    println(s"   Checkpoint: $finalCheckpointPath")
 
     val tempBucket = finalCheckpointPath.split("/")(2)
+    val streamingCheckpointPath = s"$finalCheckpointPath/streaming"
     
-    val checkpointFile = s"$finalCheckpointPath/processed_files.txt"
-    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+    // Le Consumer attend simplement que le Producer crée le dossier et les fichiers
+    // Spark Structured Streaming gère automatiquement l'attente des nouveaux fichiers
+    println("🔍 Configuration du streaming...")
+    println(s"   ℹ️  Le Consumer attendra que le Producer crée le dossier inbox et les fichiers")
+    println(s"   ℹ️  Aucune action nécessaire, le streaming démarrera automatiquement")
 
-    def loadProcessedFiles(): Set[String] = {
-      Try {
-        val path = new Path(checkpointFile)
-        if (fs.exists(path)) {
-          val in = fs.open(path)
-          val content = scala.io.Source.fromInputStream(in).mkString
-          in.close()
-          content.split("\n").filter(_.nonEmpty).toSet
-        } else {
-          Set.empty[String]
+    // Fonction pour sanitizer les noms de colonnes
+    def sanitizeCol(name: String, idx: Int): String = {
+      val lower = name.toLowerCase
+      val replaced = lower.replaceAll("[^a-z0-9]+", "_")
+      val collapsed = replaced.replaceAll("_+", "_").stripPrefix("_").stripSuffix("_")
+      val base = if (collapsed.isEmpty) s"col_$idx" else collapsed
+      if (base.headOption.exists(_.isDigit)) s"col_$base" else base
+    }
+
+    // Fonction pour transformer le DataFrame (sanitize + cast)
+    def transformDF(inputDF: org.apache.spark.sql.DataFrame): org.apache.spark.sql.DataFrame = {
+      // Sanitize column names
+      val seen = scala.collection.mutable.Set[String]()
+      val renamed = inputDF.columns.zipWithIndex.map { case (c, i) =>
+        var candidate = sanitizeCol(c, i)
+        var suffix = 1
+        while (seen.contains(candidate)) {
+          suffix += 1
+          candidate = s"${sanitizeCol(c, i)}_$suffix"
         }
-      }.getOrElse(Set.empty[String])
-    }
-
-    def saveProcessedFiles(files: Set[String]): Unit = {
-      Try {
-        val path = new Path(checkpointFile)
-        val out = fs.create(path, true) // overwrite
-        out.write((files.mkString("\n") + "\n").getBytes)
-        out.close()
+        seen.add(candidate)
+        (c, candidate)
       }
+      val sanitizedDF = renamed.foldLeft(inputDF) { case (df, (orig, clean)) =>
+        if (orig == clean) df else df.withColumnRenamed(orig, clean)
+      }
+
+      // Recaler le schéma sur la table BQ (types attendus)
+      def colOrNull(name: String) = if (sanitizedDF.columns.contains(name)) col(name) else lit(null)
+
+      sanitizedDF.select(
+        colOrNull("customer_id").cast("int").alias("customer_id"),
+        colOrNull("age").cast("int").alias("age"),
+        colOrNull("gender").alias("gender"),
+        colOrNull("item_purchased").alias("item_purchased"),
+        colOrNull("category").alias("category"),
+        colOrNull("purchase_amount_usd").cast("double").alias("purchase_amount_usd"),
+        colOrNull("location").alias("location"),
+        colOrNull("size").alias("size"),
+        colOrNull("color").alias("color"),
+        colOrNull("season").alias("season"),
+        colOrNull("review_rating").cast("double").alias("review_rating"),
+        colOrNull("subscription_status").alias("subscription_status"),
+        colOrNull("shipping_type").alias("shipping_type"),
+        colOrNull("discount_applied").alias("discount_applied"),
+        colOrNull("promo_code_used").alias("promo_code_used"),
+        colOrNull("previous_purchases").cast("int").alias("previous_purchases"),
+        colOrNull("payment_method").alias("payment_method"),
+        colOrNull("frequency_of_purchases").alias("frequency_of_purchases"),
+        colOrNull("processed_time").cast("timestamp").alias("processed_time")
+      )
     }
 
-    var processedFiles = loadProcessedFiles()
-    println(s"Fichiers déjà traités au démarrage : ${processedFiles.size}")
+    // Fonction pour créer un hash unique d'une ligne
+    def createRowHash(df: org.apache.spark.sql.DataFrame) = {
+      df.withColumn(
+        "row_hash",
+        md5(concat_ws("|",
+          col("customer_id").cast("string"),
+          col("age").cast("string"),
+          col("gender"),
+          col("item_purchased"),
+          col("category"),
+          col("purchase_amount_usd").cast("string"),
+          col("location"),
+          col("size"),
+          col("color"),
+          col("season"),
+          col("review_rating").cast("string"),
+          col("subscription_status"),
+          col("shipping_type"),
+          col("discount_applied"),
+          col("promo_code_used"),
+          col("previous_purchases").cast("string"),
+          col("payment_method"),
+          col("frequency_of_purchases")
+        ))
+      )
+    }
 
-    while (true) {
-      try {
-        val allFiles = try {
-          println(s"DEBUG: Vérification du chemin: $finalInputPath")
-          
-          val csvFiles = try {
-            val filesRDD = spark.sparkContext.wholeTextFiles(s"$finalInputPath/*.csv", 1)
-            val files = filesRDD.map(_._1).collect().filter(_.endsWith(".csv")).toSet
-            files
-          } catch {
-            case e: Exception =>
-              println(s"DEBUG: Erreur lors de wholeTextFiles: ${e.getClass.getSimpleName}: ${e.getMessage}")
-              e.printStackTrace()
-              // Fallback : essayer avec Hadoop FileSystem
-              try {
-                val path = new Path(finalInputPath)
-                if (fs.exists(path)) {
-                  fs.listStatus(path)
-                    .filter(_.isFile)
-                    .filter(_.getPath.getName.endsWith(".csv"))
-                    .map(_.getPath.toString)
-                    .toSet
-                } else {
-                  println(s"DEBUG: Le chemin n'existe pas (fallback)")
-                  Set.empty[String]
-                }
-              } catch {
-                case e2: Exception =>
-                  println(s"DEBUG: Erreur lors du fallback FileSystem: ${e2.getClass.getSimpleName}: ${e2.getMessage}")
-                  e2.printStackTrace()
-                  Set.empty[String]
-              }
-          }
-          
-          println(s"DEBUG: Fichiers CSV trouvés: ${csvFiles.size}")
-          csvFiles.foreach(f => println(s"DEBUG:   - $f"))
-          
-          csvFiles
+    // Lire le stream depuis GCS
+    println("📡 Configuration du streaming depuis GCS...")
+    
+    // Définir le schéma attendu (basé sur le schéma BigQuery)
+    // Cela évite d'avoir besoin d'un fichier existant pour inférer le schéma
+    import org.apache.spark.sql.types._
+    val csvSchema = StructType(Array(
+      StructField("Customer ID", IntegerType, true),
+      StructField("Age", IntegerType, true),
+      StructField("Gender", StringType, true),
+      StructField("Item Purchased", StringType, true),
+      StructField("Category", StringType, true),
+      StructField("Purchase Amount (USD)", DoubleType, true),
+      StructField("Location", StringType, true),
+      StructField("Size", StringType, true),
+      StructField("Color", StringType, true),
+      StructField("Season", StringType, true),
+      StructField("Review Rating", DoubleType, true),
+      StructField("Subscription Status", StringType, true),
+      StructField("Shipping Type", StringType, true),
+      StructField("Discount Applied", StringType, true),
+      StructField("Promo Code Used", StringType, true),
+      StructField("Previous Purchases", IntegerType, true),
+      StructField("Payment Method", StringType, true),
+      StructField("Frequency of Purchases", StringType, true)
+    ))
+    
+    // Configuration du streaming avec gestion des dossiers vides
+    println("📡 Configuration du streaming depuis GCS...")
+    println("   ℹ️  Le streaming attendra automatiquement les nouveaux fichiers même si le dossier est vide")
+    
+    val streamDF = spark.readStream
+      .format("csv")
+      .option("header", "true")
+      .option("inferSchema", "false") // Utiliser le schéma explicite
+      .schema(csvSchema) // Schéma fixe pour éviter les erreurs
+      .option("maxFilesPerTrigger", 10) // Traiter max 10 fichiers par micro-batch
+      .option("latestFirst", "false") // Traiter les fichiers dans l'ordre d'arrivée
+      .option("recursiveFileLookup", "false") // Ne pas chercher récursivement
+      .load(finalInputPath)
+
+    // Transformer le stream
+    val transformedDF = streamDF
+      .withColumn("processed_time", current_timestamp())
+      .transform(transformDF)
+
+    // Écrire dans BigQuery avec foreachBatch pour gérer les doublons
+    println("✍️  Configuration de l'écriture vers BigQuery...")
+    
+    val query = transformedDF.writeStream
+      .foreachBatch { (batchDF: org.apache.spark.sql.DataFrame, batchId: Long) =>
+        println(s"\n🔄 Micro-batch #$batchId")
+        
+        val rowCount = try {
+          batchDF.count()
         } catch {
           case e: Exception =>
-            println(s"DEBUG: Erreur lors du listing des fichiers: ${e.getClass.getSimpleName}")
-            println(s"DEBUG: Message d'erreur: ${e.getMessage}")
-            println(s"DEBUG: Stack trace:")
-            e.printStackTrace()
-            Set.empty[String]
+            println(s"   ⚠️  Erreur lors du comptage (dossier peut-être vide) : ${e.getMessage}")
+            0L
         }
+        
+        if (rowCount > 0) {
+          println(s"   📊 $rowCount ligne(s) reçue(s) dans ce batch")
 
-        println(s"DEBUG: Total fichiers CSV détectés: ${allFiles.size}")
-        println(s"DEBUG: Fichiers déjà traités: ${processedFiles.size}")
+          // Créer le hash pour chaque ligne du batch
+          val batchDFWithHash = createRowHash(batchDF)
 
-        // Identifier les nouveaux fichiers
-        val newFiles = allFiles -- processedFiles
-
-        if (newFiles.nonEmpty) {
-          println(s"${newFiles.size} nouveau(x) fichier(s) détecté(s) : ${newFiles.mkString(", ")}")
-
-          // Lire et traiter les nouveaux fichiers
-          val inputDF = spark.read
-            .format("csv")
-            .option("header", "true")
-            .option("inferSchema", "true")
-            .load(newFiles.toSeq: _*)
-            .withColumn("processed_time", current_timestamp())
-
-          // Sanitize column names to match BigQuery requirements (lower_snake_case, no trailing underscores, no leading digit)
-          def sanitizeCol(name: String, idx: Int): String = {
-            val lower = name.toLowerCase
-            val replaced = lower.replaceAll("[^a-z0-9]+", "_")
-            val collapsed = replaced.replaceAll("_+", "_").stripPrefix("_").stripSuffix("_")
-            val base = if (collapsed.isEmpty) s"col_$idx" else collapsed
-            if (base.headOption.exists(_.isDigit)) s"col_$base" else base
+          // Lire les données existantes de BigQuery pour vérifier les doublons
+          println("   🔍 Vérification des doublons dans BigQuery...")
+          val existingDF = try {
+            spark.read
+              .format("com.google.cloud.spark.bigquery.BigQueryRelationProvider")
+              .option("table", finalBigQueryTable)
+              .load()
+              .select(
+                md5(concat_ws("|",
+                  col("customer_id").cast("string"),
+                  col("age").cast("string"),
+                  col("gender"),
+                  col("item_purchased"),
+                  col("category"),
+                  col("purchase_amount_usd").cast("string"),
+                  col("location"),
+                  col("size"),
+                  col("color"),
+                  col("season"),
+                  col("review_rating").cast("string"),
+                  col("subscription_status"),
+                  col("shipping_type"),
+                  col("discount_applied"),
+                  col("promo_code_used"),
+                  col("previous_purchases").cast("string"),
+                  col("payment_method"),
+                  col("frequency_of_purchases")
+                )).alias("row_hash")
+              )
+          } catch {
+            case e: Exception =>
+              println(s"   ⚠️  Impossible de lire BigQuery (peut-être vide) : ${e.getMessage}")
+              spark.emptyDataFrame.select(lit("").alias("row_hash"))
           }
-          val seen = scala.collection.mutable.Set[String]()
-          val renamed = inputDF.columns.zipWithIndex.map { case (c, i) =>
-            var candidate = sanitizeCol(c, i)
-            var suffix = 1
-            while (seen.contains(candidate)) {
-              suffix += 1
-              candidate = s"${sanitizeCol(c, i)}_$suffix"
-            }
-            seen.add(candidate)
-            (c, candidate)
-          }
-          val sanitizedDF = renamed.foldLeft(inputDF) { case (df, (orig, clean)) =>
-            if (orig == clean) df else df.withColumnRenamed(orig, clean)
+
+          // Filtrer les doublons
+          val newRowsDF = batchDFWithHash
+            .join(existingDF, Seq("row_hash"), "left_anti")
+            .drop("row_hash")
+
+          val newRowCount = newRowsDF.count()
+          val duplicateCount = rowCount - newRowCount
+
+          if (duplicateCount > 0) {
+            println(s"   ⚠️  $duplicateCount doublon(s) détecté(s) et ignoré(s)")
           }
 
-          // Recaler le schéma sur la table BQ (types attendus) et tronquer aux colonnes utiles
-          def colOrNull(name: String) = if (sanitizedDF.columns.contains(name)) col(name) else lit(null)
+          if (newRowCount > 0) {
+            println(s"   📝 Écriture de $newRowCount nouvelle(s) ligne(s) dans BigQuery...")
+            
+            newRowsDF.write
+              .format("com.google.cloud.spark.bigquery.BigQueryRelationProvider")
+              .option("table", finalBigQueryTable)
+              .option("temporaryGcsBucket", tempBucket)
+              .option("intermediateFormat", "parquet")
+              .mode("append")
+              .save()
 
-          val bqDF = sanitizedDF.select(
-            colOrNull("customer_id").cast("int").alias("customer_id"),
-            colOrNull("age").cast("int").alias("age"),
-            colOrNull("gender").alias("gender"),
-            colOrNull("item_purchased").alias("item_purchased"),
-            colOrNull("category").alias("category"),
-            colOrNull("purchase_amount_usd").cast("double").alias("purchase_amount_usd"), // BQ est en FLOAT
-            colOrNull("location").alias("location"),
-            colOrNull("size").alias("size"),
-            colOrNull("color").alias("color"),
-            colOrNull("season").alias("season"),
-            colOrNull("review_rating").cast("double").alias("review_rating"),
-            colOrNull("subscription_status").alias("subscription_status"),
-            colOrNull("shipping_type").alias("shipping_type"),
-            colOrNull("discount_applied").alias("discount_applied"),
-            colOrNull("promo_code_used").alias("promo_code_used"),
-            colOrNull("previous_purchases").cast("int").alias("previous_purchases"),
-            colOrNull("payment_method").alias("payment_method"),
-            colOrNull("frequency_of_purchases").alias("frequency_of_purchases"),
-            colOrNull("processed_time").cast("timestamp").alias("processed_time")
-          )
-
-          val rowCount = bqDF.count()
-          println(s"Lecture de $rowCount lignes depuis ${newFiles.size} fichier(s) (schéma aligné BQ)")
-
-          // Écrire dans BigQuery
-          // Utiliser la méthode indirecte (par défaut) avec Parquet pour éviter les conflits de convertisseurs v1/v2
-          bqDF.write
-            .format("com.google.cloud.spark.bigquery.BigQueryRelationProvider") // forcer v1 pour éviter le conflit v1/v2
-            .option("table", finalBigQueryTable)
-            .option("temporaryGcsBucket", tempBucket)
-            .option("intermediateFormat", "parquet") // Format intermédiaire performant
-            // writeMethod="direct" désactivé pour éviter le bug TimestampNTZ avec les convertisseurs v2
-            .mode("append")
-            .save()
-
-          println(s"✓ $rowCount lignes écrites dans BigQuery")
-
-          // Mettre à jour la liste des fichiers traités
-          processedFiles = processedFiles ++ newFiles
-          saveProcessedFiles(processedFiles)
-          println(s"Checkpoint mis à jour : ${processedFiles.size} fichier(s) traités au total")
+            println(s"   ✅ $newRowCount ligne(s) écrite(s) avec succès")
+          } else {
+            println("   ℹ️  Toutes les lignes existent déjà, aucune écriture")
+          }
         } else {
-          println("Aucun nouveau fichier détecté")
+          println("   ℹ️  Batch vide, aucun traitement")
         }
-
-      } catch {
-        case e: Exception =>
-          println(s"ERREUR lors du traitement : ${e.getMessage}")
-          e.printStackTrace()
       }
+      .option("checkpointLocation", streamingCheckpointPath)
+      .trigger(org.apache.spark.sql.streaming.Trigger.ProcessingTime("15 seconds")) // Traiter toutes les 15 secondes
+      .start()
 
-      // Attendre 15 secondes avant la prochaine itération
-      Thread.sleep(15000)
-    }
+    println("✅ Streaming démarré ! En attente de nouveaux fichiers...")
+    println("   (Appuyez sur Ctrl+C pour arrêter)")
+
+    // Attendre la fin du streaming
+    query.awaitTermination()
   }
 }
