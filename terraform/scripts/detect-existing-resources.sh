@@ -26,8 +26,20 @@ check_service_account() {
 check_bucket() {
     local bucket_name=$1
     local project=$2
-    gsutil ls -p "$project" "gs://$bucket_name" >/dev/null 2>&1
-    return $?
+    # Utiliser gsutil stat qui est plus fiable pour vérifier l'existence
+    # Si le bucket existe mais qu'on n'a pas les permissions, on essaie aussi gsutil ls -b
+    if gsutil stat -p "$project" "gs://$bucket_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    # Fallback: essayer de lister le bucket (peut échouer si pas de permissions mais bucket existe)
+    if gsutil ls -b -p "$project" "gs://$bucket_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    # Dernier essai: vérifier via gcloud storage buckets describe
+    if gcloud storage buckets describe "gs://$bucket_name" --project="$project" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
 }
 
 # Fonction pour vérifier si un dataset BigQuery existe
@@ -54,13 +66,27 @@ echo "📦 Vérification des buckets GCS..."
 PIPELINE_NAME="spark-streaming-pipeline"
 BUCKET_PREFIX="${PIPELINE_NAME}-${ENVIRONMENT}-$(echo $PROJECT_ID | tr '.' '-')"
 
-if check_bucket "${BUCKET_PREFIX}-data" "$PROJECT_ID" && \
-   check_bucket "${BUCKET_PREFIX}-checkpoints" "$PROJECT_ID" && \
-   check_bucket "${BUCKET_PREFIX}-artifacts" "$PROJECT_ID"; then
-    echo "  ✅ Buckets existent"
+# Vérifier chaque bucket individuellement pour un meilleur debugging
+DATA_BUCKET="${BUCKET_PREFIX}-data"
+CHECKPOINT_BUCKET="${BUCKET_PREFIX}-checkpoints"
+ARTIFACTS_BUCKET="${BUCKET_PREFIX}-artifacts"
+
+echo "  🔍 Vérification: gs://${DATA_BUCKET}"
+DATA_EXISTS=$(check_bucket "$DATA_BUCKET" "$PROJECT_ID" && echo "true" || echo "false")
+echo "  🔍 Vérification: gs://${CHECKPOINT_BUCKET}"
+CHECKPOINT_EXISTS=$(check_bucket "$CHECKPOINT_BUCKET" "$PROJECT_ID" && echo "true" || echo "false")
+echo "  🔍 Vérification: gs://${ARTIFACTS_BUCKET}"
+ARTIFACTS_EXISTS=$(check_bucket "$ARTIFACTS_BUCKET" "$PROJECT_ID" && echo "true" || echo "false")
+
+if [ "$DATA_EXISTS" = "true" ] && [ "$CHECKPOINT_EXISTS" = "true" ] && [ "$ARTIFACTS_EXISTS" = "true" ]; then
+    echo "  ✅ Tous les buckets existent"
     USE_EXISTING_BUCKETS="true"
 else
-    echo "  ❌ Buckets n'existent pas"
+    echo "  ⚠️  Certains buckets n'existent pas ou ne sont pas accessibles:"
+    [ "$DATA_EXISTS" = "true" ] && echo "    ✅ gs://${DATA_BUCKET}" || echo "    ❌ gs://${DATA_BUCKET}"
+    [ "$CHECKPOINT_EXISTS" = "true" ] && echo "    ✅ gs://${CHECKPOINT_BUCKET}" || echo "    ❌ gs://${CHECKPOINT_BUCKET}"
+    [ "$ARTIFACTS_EXISTS" = "true" ] && echo "    ✅ gs://${ARTIFACTS_BUCKET}" || echo "    ❌ gs://${ARTIFACTS_BUCKET}"
+    echo "  💡 Astuce: Si les buckets existent mais ne sont pas détectés, vérifiez les permissions IAM"
     USE_EXISTING_BUCKETS="false"
 fi
 

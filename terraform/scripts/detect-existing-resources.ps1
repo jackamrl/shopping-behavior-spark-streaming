@@ -25,8 +25,26 @@ function Test-ServiceAccountExists {
 function Test-BucketExists {
     param([string]$BucketName, [string]$Project)
     
-    $result = gsutil ls -p $Project "gs://$BucketName" 2>&1
-    return $LASTEXITCODE -eq 0
+    # Essayer plusieurs méthodes pour être plus robuste
+    # Méthode 1: gsutil stat (plus fiable)
+    $result1 = gsutil stat -p $Project "gs://$BucketName" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return $true
+    }
+    
+    # Méthode 2: gsutil ls -b (lister le bucket)
+    $result2 = gsutil ls -b -p $Project "gs://$BucketName" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return $true
+    }
+    
+    # Méthode 3: gcloud storage buckets describe
+    $result3 = gcloud storage buckets describe "gs://$BucketName" --project=$Project 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return $true
+    }
+    
+    return $false
 }
 
 # Fonction pour vérifier si un dataset BigQuery existe
@@ -56,16 +74,39 @@ Write-Host "📦 Vérification des buckets GCS..." -ForegroundColor Cyan
 $pipelineName = "spark-streaming-pipeline"
 $bucketPrefix = "$pipelineName-$Environment-$($ProjectId.Replace('.', '-'))"
 
-$dataBucketExists = Test-BucketExists "$bucketPrefix-data" $ProjectId
-$checkpointBucketExists = Test-BucketExists "$bucketPrefix-checkpoints" $ProjectId
-$artifactsBucketExists = Test-BucketExists "$bucketPrefix-artifacts" $ProjectId
+$dataBucket = "$bucketPrefix-data"
+$checkpointBucket = "$bucketPrefix-checkpoints"
+$artifactsBucket = "$bucketPrefix-artifacts"
+
+Write-Host "  🔍 Vérification: gs://$dataBucket" -ForegroundColor Gray
+$dataBucketExists = Test-BucketExists $dataBucket $ProjectId
+Write-Host "  🔍 Vérification: gs://$checkpointBucket" -ForegroundColor Gray
+$checkpointBucketExists = Test-BucketExists $checkpointBucket $ProjectId
+Write-Host "  🔍 Vérification: gs://$artifactsBucket" -ForegroundColor Gray
+$artifactsBucketExists = Test-BucketExists $artifactsBucket $ProjectId
 
 if ($dataBucketExists -and $checkpointBucketExists -and $artifactsBucketExists) {
-    Write-Host "  ✅ Buckets existent" -ForegroundColor Green
+    Write-Host "  ✅ Tous les buckets existent" -ForegroundColor Green
     $useExistingBuckets = "true"
 }
 else {
-    Write-Host "  ❌ Buckets n'existent pas" -ForegroundColor Yellow
+    Write-Host "  ⚠️  Certains buckets n'existent pas ou ne sont pas accessibles:" -ForegroundColor Yellow
+    if ($dataBucketExists) {
+        Write-Host "    ✅ gs://$dataBucket" -ForegroundColor Green
+    } else {
+        Write-Host "    ❌ gs://$dataBucket" -ForegroundColor Red
+    }
+    if ($checkpointBucketExists) {
+        Write-Host "    ✅ gs://$checkpointBucket" -ForegroundColor Green
+    } else {
+        Write-Host "    ❌ gs://$checkpointBucket" -ForegroundColor Red
+    }
+    if ($artifactsBucketExists) {
+        Write-Host "    ✅ gs://$artifactsBucket" -ForegroundColor Green
+    } else {
+        Write-Host "    ❌ gs://$artifactsBucket" -ForegroundColor Red
+    }
+    Write-Host "  💡 Astuce: Si les buckets existent mais ne sont pas détectés, vérifiez les permissions IAM" -ForegroundColor Yellow
     $useExistingBuckets = "false"
 }
 
