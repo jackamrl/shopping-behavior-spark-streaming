@@ -55,7 +55,7 @@ dataproc_cluster_config = {
 #
 # Voir TERRAFORM_USE_EXISTING_GUIDE.md pour plus de détails
 use_existing_dataset = false              # false = créer, true = utiliser l'existant
-use_existing_buckets = false              # false = créer, true = utiliser l'existant
+use_existing_buckets = true               # false = créer, true = utiliser l'existant (buckets existent déjà)
 use_existing_service_accounts = true      # false = créer, true = utiliser l'existant (existent déjà)
 
 # Configuration BigQuery
