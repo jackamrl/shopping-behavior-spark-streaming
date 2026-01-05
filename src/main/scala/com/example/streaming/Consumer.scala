@@ -49,21 +49,17 @@ object Consumer {
     require(finalBigQueryTable.nonEmpty, "BIGQUERY_TABLE manquant")
     require(finalCheckpointPath.nonEmpty, "CHECKPOINT_PATH manquant")
 
-    println(s"🚀 Démarrage du Consumer Streaming")
-    println(s"   Input: $finalInputPath")
-    println(s"   Output: $finalBigQueryTable")
-    println(s"   Checkpoint: $finalCheckpointPath")
+    println(s"[INFO] Démarrage du Consumer Streaming")
+    println(s"[INFO] Input: $finalInputPath")
+    println(s"[INFO] Output: $finalBigQueryTable")
+    println(s"[INFO] Checkpoint: $finalCheckpointPath")
 
     val tempBucket = finalCheckpointPath.split("/")(2)
     val streamingCheckpointPath = s"$finalCheckpointPath/streaming"
     
-    // Le Consumer attend simplement que le Producer crée le dossier et les fichiers
-    // Spark Structured Streaming gère automatiquement l'attente des nouveaux fichiers
-    println("🔍 Configuration du streaming...")
-    println(s"   ℹ️  Le Consumer attendra que le Producer crée le dossier inbox et les fichiers")
-    println(s"   ℹ️  Aucune action nécessaire, le streaming démarrera automatiquement")
+    println("[INFO] Configuration du streaming...")
 
-    // Fonction pour sanitizer les noms de colonnes
+
     def sanitizeCol(name: String, idx: Int): String = {
       val lower = name.toLowerCase
       val replaced = lower.replaceAll("[^a-z0-9]+", "_")
@@ -72,7 +68,7 @@ object Consumer {
       if (base.headOption.exists(_.isDigit)) s"col_$base" else base
     }
 
-    // Fonction pour transformer le DataFrame (sanitize + cast)
+    // Fonction pour transformer le DataFrame (sanitize + cast + enrichissements)
     def transformDF(inputDF: org.apache.spark.sql.DataFrame): org.apache.spark.sql.DataFrame = {
       // Sanitize column names
       val seen = scala.collection.mutable.Set[String]()
@@ -93,7 +89,7 @@ object Consumer {
       // Recaler le schéma sur la table BQ (types attendus)
       def colOrNull(name: String) = if (sanitizedDF.columns.contains(name)) col(name) else lit(null)
 
-      sanitizedDF.select(
+      val baseDF = sanitizedDF.select(
         colOrNull("customer_id").cast("int").alias("customer_id"),
         colOrNull("age").cast("int").alias("age"),
         colOrNull("gender").alias("gender"),
@@ -114,40 +110,113 @@ object Consumer {
         colOrNull("frequency_of_purchases").alias("frequency_of_purchases"),
         colOrNull("processed_time").cast("timestamp").alias("processed_time")
       )
-    }
 
-    // Fonction pour créer un hash unique d'une ligne
-    def createRowHash(df: org.apache.spark.sql.DataFrame) = {
-      df.withColumn(
-        "row_hash",
-        md5(concat_ws("|",
-          col("customer_id").cast("string"),
-          col("age").cast("string"),
-          col("gender"),
-          col("item_purchased"),
-          col("category"),
-          col("purchase_amount_usd").cast("string"),
-          col("location"),
-          col("size"),
-          col("color"),
-          col("season"),
-          col("review_rating").cast("string"),
-          col("subscription_status"),
-          col("shipping_type"),
-          col("discount_applied"),
-          col("promo_code_used"),
-          col("previous_purchases").cast("string"),
-          col("payment_method"),
-          col("frequency_of_purchases")
-        ))
+      // ========== TRAITEMENTS MÉTIER ==========
+      
+      // 1. Calcul du montant après remise (si discount_applied = "Yes")
+      val withDiscountAmount = baseDF.withColumn(
+        "final_amount_usd",
+        when(col("discount_applied") === "Yes", col("purchase_amount_usd") * 0.9)
+          .otherwise(col("purchase_amount_usd"))
       )
+
+      // 2. Catégorisation du montant d'achat
+      val withAmountCategory = withDiscountAmount.withColumn(
+        "amount_category",
+        when(col("final_amount_usd") < 50, "Small")
+          .when(col("final_amount_usd") < 150, "Medium")
+          .when(col("final_amount_usd") < 300, "Large")
+          .otherwise("Premium")
+      )
+
+      // 3. Segmentation client basée sur les achats précédents
+      val withCustomerSegment = withAmountCategory.withColumn(
+        "customer_segment",
+        when(col("previous_purchases") >= 10, "VIP")
+          .when(col("previous_purchases") >= 5, "Regular")
+          .when(col("previous_purchases") >= 2, "Occasional")
+          .otherwise("New")
+      )
+
+      // 4. Score de satisfaction client (basé sur review_rating)
+      val withSatisfactionScore = withCustomerSegment.withColumn(
+        "satisfaction_level",
+        when(col("review_rating") >= 4.5, "Very Satisfied")
+          .when(col("review_rating") >= 4.0, "Satisfied")
+          .when(col("review_rating") >= 3.0, "Neutral")
+          .when(col("review_rating") >= 2.0, "Dissatisfied")
+          .otherwise("Very Dissatisfied")
+      )
+
+      // 5. Détection d'anomalies (montants anormalement élevés)
+      val withAnomalyFlag = withSatisfactionScore.withColumn(
+        "is_anomaly",
+        when(col("final_amount_usd") > 500, true)
+          .otherwise(false)
+      )
+
+      // 6. Calcul de la valeur client estimée (CLV simplifié)
+      val withCustomerValue = withAnomalyFlag.withColumn(
+        "estimated_clv",
+        col("previous_purchases") * col("final_amount_usd") * 0.3
+      )
+
+      // 7. Catégorisation de la fréquence d'achat
+      val withFrequencyCategory = withCustomerValue.withColumn(
+        "frequency_category",
+        when(col("frequency_of_purchases") === "Weekly", "High Frequency")
+          .when(col("frequency_of_purchases") === "Monthly", "Medium Frequency")
+          .when(col("frequency_of_purchases") === "Annually", "Low Frequency")
+          .otherwise("Unknown")
+      )
+
+      // 8. Calcul du profit estimé (montant - coût estimé à 60%)
+      val withProfit = withFrequencyCategory.withColumn(
+        "estimated_profit_usd",
+        col("final_amount_usd") * 0.4
+      )
+
+      // 9. Catégorisation par saison (haute/basse saison)
+      val withSeasonCategory = withProfit.withColumn(
+        "season_type",
+        when(col("season").isin("Spring", "Summer"), "High Season")
+          .otherwise("Low Season")
+      )
+
+      // 10. Score de fidélité (basé sur subscription_status et previous_purchases)
+      val withLoyaltyScore = withSeasonCategory.withColumn(
+        "loyalty_score",
+        when(col("subscription_status") === "Yes" && col("previous_purchases") >= 5, "High")
+          .when(col("subscription_status") === "Yes" || col("previous_purchases") >= 3, "Medium")
+          .otherwise("Low")
+      )
+
+      withLoyaltyScore
     }
 
-    // Lire le stream depuis GCS
-    println("📡 Configuration du streaming depuis GCS...")
+    // Fonction pour créer un hash unique d'une ligne (optimisée)
+    val hashColumns = Seq(
+      "customer_id", "age", "gender", "item_purchased", "category",
+      "purchase_amount_usd", "location", "size", "color", "season",
+      "review_rating", "subscription_status", "shipping_type",
+      "discount_applied", "promo_code_used", "previous_purchases",
+      "payment_method", "frequency_of_purchases"
+    )
     
+    def createRowHash(df: org.apache.spark.sql.DataFrame) = {
+      val hashExpr = md5(concat_ws("|", hashColumns.map { colName =>
+        col(colName).cast("string")
+      }: _*))
+      df.withColumn("row_hash", hashExpr)
+    }
+    
+    def createHashExpr = {
+      md5(concat_ws("|", hashColumns.map { colName =>
+        col(colName).cast("string")
+      }: _*))
+    }
+
     // Définir le schéma attendu (basé sur le schéma BigQuery)
-    // Cela évite d'avoir besoin d'un fichier existant pour inférer le schéma
     import org.apache.spark.sql.types._
     val csvSchema = StructType(Array(
       StructField("Customer ID", IntegerType, true),
@@ -170,9 +239,7 @@ object Consumer {
       StructField("Frequency of Purchases", StringType, true)
     ))
     
-    // Configuration du streaming avec gestion des dossiers vides
-    println("📡 Configuration du streaming depuis GCS...")
-    println("   ℹ️  Le streaming attendra automatiquement les nouveaux fichiers même si le dossier est vide")
+    println("[INFO] Configuration du streaming depuis GCS...")
     
     val streamDF = spark.readStream
       .format("csv")
@@ -189,63 +256,38 @@ object Consumer {
       .withColumn("processed_time", current_timestamp())
       .transform(transformDF)
 
-    // Écrire dans BigQuery avec foreachBatch pour gérer les doublons
-    println("✍️  Configuration de l'écriture vers BigQuery...")
+    println("[INFO] Configuration de l'écriture vers BigQuery...")
     
     val query = transformedDF.writeStream
       .foreachBatch { (batchDF: org.apache.spark.sql.DataFrame, batchId: Long) =>
-        println(s"\n🔄 Micro-batch #$batchId")
+        println(s"[BATCH #$batchId] Traitement du micro-batch...")
         
         val rowCount = try {
           batchDF.count()
         } catch {
           case e: Exception =>
-            println(s"   ⚠️  Erreur lors du comptage (dossier peut-être vide) : ${e.getMessage}")
+            println(s"[WARN] Erreur lors du comptage: ${e.getMessage}")
             0L
         }
         
         if (rowCount > 0) {
-          println(s"   📊 $rowCount ligne(s) reçue(s) dans ce batch")
+          println(s"[BATCH #$batchId] $rowCount ligne(s) reçue(s)")
 
-          // Créer le hash pour chaque ligne du batch
           val batchDFWithHash = createRowHash(batchDF)
 
-          // Lire les données existantes de BigQuery pour vérifier les doublons
-          println("   🔍 Vérification des doublons dans BigQuery...")
+          println(s"[BATCH #$batchId] Vérification des doublons dans BigQuery...")
           val existingDF = try {
             spark.read
               .format("com.google.cloud.spark.bigquery.BigQueryRelationProvider")
               .option("table", finalBigQueryTable)
               .load()
-              .select(
-                md5(concat_ws("|",
-                  col("customer_id").cast("string"),
-                  col("age").cast("string"),
-                  col("gender"),
-                  col("item_purchased"),
-                  col("category"),
-                  col("purchase_amount_usd").cast("string"),
-                  col("location"),
-                  col("size"),
-                  col("color"),
-                  col("season"),
-                  col("review_rating").cast("string"),
-                  col("subscription_status"),
-                  col("shipping_type"),
-                  col("discount_applied"),
-                  col("promo_code_used"),
-                  col("previous_purchases").cast("string"),
-                  col("payment_method"),
-                  col("frequency_of_purchases")
-                )).alias("row_hash")
-              )
+              .select(createHashExpr.alias("row_hash"))
           } catch {
             case e: Exception =>
-              println(s"   ⚠️  Impossible de lire BigQuery (peut-être vide) : ${e.getMessage}")
+              println(s"[WARN] Impossible de lire BigQuery: ${e.getMessage}")
               spark.emptyDataFrame.select(lit("").alias("row_hash"))
           }
 
-          // Filtrer les doublons
           val newRowsDF = batchDFWithHash
             .join(existingDF, Seq("row_hash"), "left_anti")
             .drop("row_hash")
@@ -254,11 +296,11 @@ object Consumer {
           val duplicateCount = rowCount - newRowCount
 
           if (duplicateCount > 0) {
-            println(s"   ⚠️  $duplicateCount doublon(s) détecté(s) et ignoré(s)")
+            println(s"[BATCH #$batchId] $duplicateCount doublon(s) détecté(s) et ignoré(s)")
           }
 
           if (newRowCount > 0) {
-            println(s"   📝 Écriture de $newRowCount nouvelle(s) ligne(s) dans BigQuery...")
+            println(s"[BATCH #$batchId] Écriture de $newRowCount nouvelle(s) ligne(s) dans BigQuery...")
             
             newRowsDF.write
               .format("com.google.cloud.spark.bigquery.BigQueryRelationProvider")
@@ -268,20 +310,20 @@ object Consumer {
               .mode("append")
               .save()
 
-            println(s"   ✅ $newRowCount ligne(s) écrite(s) avec succès")
+            println(s"[BATCH #$batchId] $newRowCount ligne(s) écrite(s) avec succès")
           } else {
-            println("   ℹ️  Toutes les lignes existent déjà, aucune écriture")
+            println(s"[BATCH #$batchId] Toutes les lignes existent déjà, aucune écriture")
           }
         } else {
-          println("   ℹ️  Batch vide, aucun traitement")
+          println(s"[BATCH #$batchId] Batch vide, aucun traitement")
         }
       }
       .option("checkpointLocation", streamingCheckpointPath)
-      .trigger(org.apache.spark.sql.streaming.Trigger.ProcessingTime("15 seconds")) // Traiter toutes les 15 secondes
+      .trigger(org.apache.spark.sql.streaming.Trigger.ProcessingTime("15 seconds"))
       .start()
 
-    println("✅ Streaming démarré ! En attente de nouveaux fichiers...")
-    println("   (Appuyez sur Ctrl+C pour arrêter)")
+    println("[INFO] Streaming démarré. En attente de nouveaux fichiers...")
+    println("[INFO] Appuyez sur Ctrl+C pour arrêter")
 
     // Attendre la fin du streaming
     query.awaitTermination()
