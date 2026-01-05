@@ -1,5 +1,6 @@
 package com.example.streaming
 
+import com.google.auth.oauth2.GoogleCredentials
 import com.google.cloud.storage.{BlobId, BlobInfo, StorageOptions}
 import io.github.cdimascio.dotenv.Dotenv
 import java.time.LocalDateTime
@@ -23,7 +24,13 @@ object Producer {
     println(s" Inbox GCS       : $inboxPath")
     println("============================================================")
 
-    val storage = StorageOptions.getDefaultInstance.getService
+    // Forcer l'utilisation des Application Default Credentials (votre compte utilisateur)
+    // Cela évite d'utiliser le compte Compute Engine par défaut
+    val credentials = GoogleCredentials.getApplicationDefault()
+    val storage = StorageOptions.newBuilder()
+      .setCredentials(credentials)
+      .build()
+      .getService
 
     // Lecture du fichier source depuis GCS
     val sourceBlob = storage.get(sourceBucket, sourceFileName)
