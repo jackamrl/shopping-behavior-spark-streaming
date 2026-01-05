@@ -8,22 +8,19 @@ on:
       - completed
     branches:
       - main
-  # Se déclenche aussi sur push vers main (sauf changements Terraform)
+  # Se déclenche aussi sur push vers main
+  # Note: On ne filtre plus les changements Terraform pour permettre le build après Apply
   push:
     branches:
       - main
-    paths-ignore:
-      - 'terraform/**'
-      - '.github/workflows/terraform-*.yml'
-  # Se déclenche sur merge de PR vers main (sauf changements Terraform)
+  # Se déclenche sur merge de PR vers main
   pull_request:
     types: [closed]
     branches:
       - main
-    paths-ignore:
-      - 'terraform/**'
-      - '.github/workflows/terraform-*.yml'
   workflow_dispatch:  # Permet de déclencher manuellement
+  # Déclenchement alternatif : après un push vers main (même avec Terraform)
+  # Cela garantit que le build s'exécute même si workflow_run ne fonctionne pas
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -33,15 +30,63 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     # Ne s'exécute que si :
-    # - C'est un push vers main (sauf Terraform)
-    # - C'est un merge de PR vers main (sauf Terraform)
+    # - C'est un workflow_dispatch (déclenchement manuel) - TOUJOURS autorisé
+    # - C'est un push vers main - TOUJOURS autorisé (même avec changements Terraform)
+    # - C'est un merge de PR vers main - TOUJOURS autorisé
     # - C'est déclenché par workflow_run ET le workflow Terraform Apply a réussi
+    # 
+    # Note: On autorise le push vers main même avec Terraform pour garantir que le build
+    # s'exécute après un Terraform Apply réussi, même si workflow_run ne se déclenche pas
     if: |
-      (github.event_name == 'push') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true) ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     
     steps:
+      - name: Debug workflow trigger
+        run: |
+          echo "🔍 Informations de debug du workflow Build JAR:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo ""
+          
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            echo "📋 Informations du workflow_run:"
+            echo "  Workflow name: ${{ github.event.workflow_run.name }}"
+            echo "  Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            echo "  Workflow status: ${{ github.event.workflow_run.status }}"
+            echo "  Head branch: ${{ github.event.workflow_run.head_branch }}"
+            echo "  Head SHA: ${{ github.event.workflow_run.head_sha }}"
+            echo ""
+            if [ "${{ github.event.workflow_run.conclusion }}" == "success" ]; then
+              echo "✅ Terraform Apply a réussi - Le build JAR va s'exécuter"
+            else
+              echo "⚠️  Terraform Apply a échoué ou n'est pas terminé"
+              echo "   Conclusion: ${{ github.event.workflow_run.conclusion }}"
+              echo "   Status: ${{ github.event.workflow_run.status }}"
+            fi
+          fi
+          
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "📋 Informations de la Pull Request:"
+            echo "  Merged: ${{ github.event.pull_request.merged }}"
+            echo "  Base branch: ${{ github.event.pull_request.base.ref }}"
+          fi
+          
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "📋 Informations du push:"
+            echo "  Branch: ${{ github.ref_name }}"
+            echo "  SHA: ${{ github.sha }}"
+          fi
+          
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "📋 Déclenchement manuel"
+          fi
+          
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -92,7 +137,7 @@ jobs:
         run: |
           # Construction du nom du bucket (remplacement des points par des tirets dans le project_id)
           PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
-          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-artifacts"
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-data"
           
           VERSION=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -110,6 +155,44 @@ jobs:
           
           echo "✅ JAR uploadé: gs://${GCS_BUCKET}/jars/${JAR_NAME}"
           echo "JAR_LATEST=gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar" >> $GITHUB_ENV
+      
+      - name: Cleanup old JAR versions
+        run: |
+          # Construction du nom du bucket
+          PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-data"
+          
+          echo "🧹 Nettoyage des anciennes versions de JARs..."
+          
+          # Lister tous les JARs versionnés (exclure latest.jar)
+          JARS=$(gsutil ls gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-*.jar 2>/dev/null | \
+            grep -v "latest.jar" | \
+            sort -r)
+          
+          # Compter le nombre de JARs
+          JAR_COUNT=$(echo "$JARS" | grep -c "\.jar$" || echo "0")
+          
+          # Garder seulement les 5 dernières versions
+          KEEP_COUNT=5
+          
+          if [ "$JAR_COUNT" -gt "$KEEP_COUNT" ]; then
+            echo "  📊 Total: $JAR_COUNT JARs, conservation des $KEEP_COUNT dernières versions"
+            
+            # Prendre les JARs à supprimer (tous sauf les KEEP_COUNT premiers)
+            TO_DELETE=$(echo "$JARS" | tail -n +$((KEEP_COUNT + 1)))
+            
+            if [ -n "$TO_DELETE" ]; then
+              echo "$TO_DELETE" | while read -r jar; do
+                if [ -n "$jar" ]; then
+                  echo "  🗑️  Suppression: $(basename $jar)"
+                  gsutil rm "$jar" || echo "  ⚠️  Échec de la suppression: $jar"
+                fi
+              done
+              echo "  ✅ Nettoyage terminé"
+            fi
+          else
+            echo "  ℹ️  $JAR_COUNT JAR(s) trouvé(s), aucun nettoyage nécessaire (limite: $KEEP_COUNT)"
+          fi
       
       - name: Upload dependencies JAR
         run: |
