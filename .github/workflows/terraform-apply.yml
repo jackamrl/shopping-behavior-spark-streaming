@@ -70,15 +70,31 @@ jobs:
       - name: Import Existing BigQuery Tables
         working-directory: terraform
         run: |
-          # Importer la table orders si elle existe
+          echo "📊 Vérification et import des tables BigQuery existantes..."
+          
+          # Vérifier si la table orders existe
           if bq show --project_id=${{ env.PROJECT_ID }} "${{ env.PROJECT_ID }}:shopping_dev.orders" >/dev/null 2>&1; then
-            echo "📊 Import de la table orders existante dans Terraform..."
-            terraform import \
-              -var-file=environments/dev/terraform.tfvars \
-              'module.bigquery.google_bigquery_table.tables["orders"]' \
-              "projects/${{ env.PROJECT_ID }}/datasets/shopping_dev/tables/orders" || echo "⚠️  Import échoué ou table déjà dans le state"
+            echo "  ✅ Table orders existe dans BigQuery"
+            
+            # Vérifier si la table est déjà dans le state Terraform
+            if terraform state show 'module.bigquery.google_bigquery_table.tables["orders"]' >/dev/null 2>&1; then
+              echo "  ℹ️  Table orders est déjà dans le state Terraform, pas besoin d'import"
+            else
+              echo "  📥 Import de la table orders dans le state Terraform..."
+              terraform import \
+                -var-file=environments/dev/terraform.tfvars \
+                'module.bigquery.google_bigquery_table.tables["orders"]' \
+                "projects/${{ env.PROJECT_ID }}/datasets/shopping_dev/tables/orders"
+              
+              # Vérifier que l'import a réussi
+              if [ $? -eq 0 ]; then
+                echo "  ✅ Import réussi"
+              else
+                echo "  ⚠️  Import échoué, la table sera peut-être recréée (erreur 409 attendue)"
+              fi
+            fi
           else
-            echo "ℹ️  Table orders n'existe pas, sera créée par Terraform"
+            echo "  ℹ️  Table orders n'existe pas, sera créée par Terraform"
           fi
         continue-on-error: true
       

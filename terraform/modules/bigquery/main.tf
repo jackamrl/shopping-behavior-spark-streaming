@@ -150,8 +150,11 @@ resource "google_bigquery_table" "tables" {
   }
   
   # Ignorer les changements de schéma pour les tables existantes (évite les erreurs si le schéma diffère légèrement)
+  # Cela permet de gérer les tables existantes sans erreur
   lifecycle {
     ignore_changes = [schema]
+    # Ne pas recréer la table si elle existe déjà (géré par l'import dans le workflow)
+    create_before_destroy = false
   }
   
   depends_on = [local.dataset_id]
