@@ -141,9 +141,10 @@ module "dataproc" {
   
   cluster_config = var.dataproc_cluster_config
   
-  # Utiliser les ressources existantes par défaut
-  use_existing_cluster       = true
-  use_existing_staging_bucket = true
+  # Si enable_cluster = true, créer un nouveau cluster
+  # Si enable_cluster = false, le module ne s'exécute pas du tout
+  use_existing_cluster       = false  # false = créer un nouveau cluster
+  use_existing_staging_bucket = false  # false = créer un nouveau bucket de staging
   
   service_account = module.iam.dataproc_service_account_email
   
