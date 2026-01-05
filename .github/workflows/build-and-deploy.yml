@@ -137,7 +137,7 @@ jobs:
         run: |
           # Construction du nom du bucket (remplacement des points par des tirets dans le project_id)
           PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
-          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-data"
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-artifacts"
           
           VERSION=$(git rev-parse --short HEAD)
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -160,38 +160,40 @@ jobs:
         run: |
           # Construction du nom du bucket
           PROJECT_ID_FOR_BUCKET=$(echo "${{ secrets.GCP_PROJECT_ID }}" | tr '.' '-')
-          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-data"
+          GCS_BUCKET="spark-streaming-pipeline-dev-${PROJECT_ID_FOR_BUCKET}-artifacts"
           
           echo "🧹 Nettoyage des anciennes versions de JARs..."
+          echo "  📋 Stratégie: Garder uniquement latest.jar, supprimer toutes les autres versions"
           
           # Lister tous les JARs versionnés (exclure latest.jar)
           JARS=$(gsutil ls gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-*.jar 2>/dev/null | \
             grep -v "latest.jar" | \
             sort -r)
           
-          # Compter le nombre de JARs
+          # Compter le nombre de JARs à supprimer
           JAR_COUNT=$(echo "$JARS" | grep -c "\.jar$" || echo "0")
           
-          # Garder seulement les 5 dernières versions
-          KEEP_COUNT=5
-          
-          if [ "$JAR_COUNT" -gt "$KEEP_COUNT" ]; then
-            echo "  📊 Total: $JAR_COUNT JARs, conservation des $KEEP_COUNT dernières versions"
+          if [ "$JAR_COUNT" -gt 0 ]; then
+            echo "  📊 Total: $JAR_COUNT ancienne(s) version(s) trouvée(s)"
+            echo "  🗑️  Suppression de toutes les anciennes versions..."
             
-            # Prendre les JARs à supprimer (tous sauf les KEEP_COUNT premiers)
-            TO_DELETE=$(echo "$JARS" | tail -n +$((KEEP_COUNT + 1)))
-            
-            if [ -n "$TO_DELETE" ]; then
-              echo "$TO_DELETE" | while read -r jar; do
-                if [ -n "$jar" ]; then
-                  echo "  🗑️  Suppression: $(basename $jar)"
-                  gsutil rm "$jar" || echo "  ⚠️  Échec de la suppression: $jar"
-                fi
-              done
-              echo "  ✅ Nettoyage terminé"
-            fi
+            # Supprimer tous les JARs versionnés (garder seulement latest.jar)
+            echo "$JARS" | while read -r jar; do
+              if [ -n "$jar" ]; then
+                echo "    🗑️  Suppression: $(basename $jar)"
+                gsutil rm "$jar" || echo "    ⚠️  Échec de la suppression: $jar"
+              fi
+            done
+            echo "  ✅ Nettoyage terminé - Seul latest.jar est conservé"
           else
-            echo "  ℹ️  $JAR_COUNT JAR(s) trouvé(s), aucun nettoyage nécessaire (limite: $KEEP_COUNT)"
+            echo "  ℹ️  Aucune ancienne version trouvée, seul latest.jar existe"
+          fi
+          
+          # Vérifier que latest.jar existe
+          if gsutil ls gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar >/dev/null 2>&1; then
+            echo "  ✅ latest.jar confirmé: gs://${GCS_BUCKET}/jars/spark-streaming-local-assembly-latest.jar"
+          else
+            echo "  ⚠️  Attention: latest.jar n'existe pas encore"
           fi
       
       - name: Upload dependencies JAR
