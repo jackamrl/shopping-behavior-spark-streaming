@@ -58,8 +58,28 @@ object Consumer {
     val streamingCheckpointPath = s"$finalCheckpointPath/streaming"
     
     println("[INFO] Configuration du streaming...")
-
-
+    
+    // Vérifier et créer le dossier inbox s'il n'existe pas
+    // Spark readStream nécessite que le chemin existe au démarrage
+    println("[INFO] Vérification du dossier inbox...")
+    val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+    val inputPath = new Path(finalInputPath)
+    
+    try {
+      if (!fs.exists(inputPath)) {
+        println(s"[INFO] Le dossier n'existe pas encore: $finalInputPath")
+        println("[INFO] Création du dossier...")
+        fs.mkdirs(inputPath)
+        println("[INFO] Dossier créé avec succès")
+      } else {
+        println("[INFO] Le dossier existe déjà")
+      }
+    } catch {
+      case e: Exception =>
+        println(s"[WARN] Erreur lors de la vérification/création du dossier: ${e.getMessage}")
+        println("[INFO] Le streaming tentera de démarrer quand même...")
+    }
+  
     def sanitizeCol(name: String, idx: Int): String = {
       val lower = name.toLowerCase
       val replaced = lower.replaceAll("[^a-z0-9]+", "_")
@@ -307,6 +327,8 @@ object Consumer {
               .option("table", finalBigQueryTable)
               .option("temporaryGcsBucket", tempBucket)
               .option("intermediateFormat", "parquet")
+              .option("allowFieldAddition", "true") // Permettre l'ajout automatique de nouvelles colonnes
+              .option("allowSchemaEvolution", "true") // Permettre l'évolution du schéma
               .mode("append")
               .save()
 
