@@ -91,7 +91,18 @@ bigquery_tables = {
       { name = "previous_purchases", type = "INTEGER", mode = "NULLABLE" },
       { name = "payment_method", type = "STRING", mode = "NULLABLE" },
       { name = "frequency_of_purchases", type = "STRING", mode = "NULLABLE" },
-      { name = "processed_time", type = "TIMESTAMP", mode = "NULLABLE" }
+      { name = "processed_time", type = "TIMESTAMP", mode = "NULLABLE" },
+      # Colonnes enrichies calculées par le Consumer
+      { name = "final_amount_usd", type = "FLOAT", mode = "NULLABLE" },
+      { name = "amount_category", type = "STRING", mode = "NULLABLE" },
+      { name = "customer_segment", type = "STRING", mode = "NULLABLE" },
+      { name = "satisfaction_level", type = "STRING", mode = "NULLABLE" },
+      { name = "is_anomaly", type = "BOOLEAN", mode = "NULLABLE" },
+      { name = "estimated_clv", type = "FLOAT", mode = "NULLABLE" },
+      { name = "frequency_category", type = "STRING", mode = "NULLABLE" },
+      { name = "estimated_profit_usd", type = "FLOAT", mode = "NULLABLE" },
+      { name = "season_type", type = "STRING", mode = "NULLABLE" },
+      { name = "loyalty_score", type = "STRING", mode = "NULLABLE" }
     ]
     partition_field    = "processed_time"
     clustering_fields  = ["category", "location"]
