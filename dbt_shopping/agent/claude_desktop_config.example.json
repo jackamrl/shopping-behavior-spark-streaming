@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shopping-metrics": {
+      "command": "/CHEMIN/VERS/venv/bin/python",
+      "args": ["/CHEMIN/VERS/dbt_shopping/agent/metrics_mcp_server.py"],
+      "env": {
+        "DBT_PROFILES_DIR": "/Users/<vous>/.dbt",
+        "SNOWFLAKE_PASSWORD": "<à définir localement, ne pas commiter>"
+      }
+    }
+  }
+}

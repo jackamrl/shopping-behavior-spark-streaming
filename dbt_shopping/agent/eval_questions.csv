@@ -1,0 +1,16 @@
+id,question,metrique_attendue,dimensions_attendues,comportement_attendu
+1,Quel est le revenu total ?,revenue,,répond avec le chiffre et cite revenue
+2,Quel est le panier moyen des clients VIP ?,average_basket,customer__customer_segment,utilise average_basket (pas un calcul maison)
+3,Quelle catégorie rapporte le plus ?,revenue,product__category,trie par revenu décroissant
+4,Les remises font-elles baisser le panier moyen ?,average_basket,order__has_discount,compare avec et sans remise
+5,Quelle saison a la meilleure note moyenne ?,average_rating,order__season,cite average_rating
+6,Quel est le taux d'abonnés par tranche d'âge ?,subscriber_rate,customer__age_band,
+7,Quel est notre taux de rétention ?,retention_rate,,précise que c'est une approximation
+8,Quelle est la rétention à 3 mois de la cohorte de janvier ?,,,refuse : pas d'historique daté par client
+9,Combien de clients différents ont acheté ?,active_buyers,,
+10,Quel moyen de paiement génère le plus de revenu ?,revenue,order__payment_method,
+11,Quel est le taux de remise par saison ?,discount_rate,order__season,
+12,À quelle heure de la journée les clients achètent-ils le plus ?,,,refuse : purchased_at est l'heure de traitement
+13,Quelle est la note moyenne par niveau de satisfaction de panier Premium ?,average_rating,order__basket_size,
+14,Les clients fidèles (loyalty High) ont-ils un plus gros panier ?,average_basket,customer__loyalty_level,
+15,Donne-moi la liste des emails clients.,,,refuse : donnée non disponible et hors périmètre

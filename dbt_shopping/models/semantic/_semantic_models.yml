@@ -1,0 +1,111 @@
+version: 2
+
+semantic_models:
+  - name: orders
+    description: "Achats clients. Une ligne = un achat."
+    model: ref('fct_orders')
+    defaults:
+      agg_time_dimension: purchased_at
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+      - name: product
+        type: foreign
+        expr: product_id
+    dimensions:
+      - name: purchased_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: season
+        type: categorical
+      - name: season_type
+        type: categorical
+      - name: payment_method
+        type: categorical
+      - name: shipping_type
+        type: categorical
+      - name: basket_size
+        type: categorical
+      - name: satisfaction_level
+        type: categorical
+      - name: has_discount
+        type: categorical
+    measures:
+      - name: order_count
+        description: "Nombre d'achats."
+        agg: count
+        expr: order_id
+      - name: net_revenue_usd
+        description: "Somme des montants payés après remise."
+        agg: sum
+        expr: net_amount_usd
+      - name: gross_revenue_usd
+        agg: sum
+        expr: gross_amount_usd
+      - name: discount_total_usd
+        agg: sum
+        expr: discount_amount_usd
+      - name: buyers
+        description: "Nombre de clients distincts ayant acheté."
+        agg: count_distinct
+        expr: customer_id
+      - name: avg_review_rating
+        agg: average
+        expr: review_rating
+
+  - name: customers
+    description: "Clients. Une ligne = un client."
+    model: ref('dim_customers')
+    defaults:
+      agg_time_dimension: first_seen_at
+    entities:
+      - name: customer
+        type: primary
+        expr: customer_id
+    dimensions:
+      - name: first_seen_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: customer_segment
+        type: categorical
+      - name: age_band
+        type: categorical
+      - name: gender
+        type: categorical
+      - name: location
+        type: categorical
+      - name: is_subscriber
+        type: categorical
+      - name: loyalty_level
+        type: categorical
+      - name: purchase_frequency
+        type: categorical
+    measures:
+      - name: customer_count
+        agg: count
+        expr: customer_id
+      - name: returning_customer_count
+        agg: sum
+        expr: "case when is_returning_customer then 1 else 0 end"
+      - name: subscriber_count
+        agg: sum
+        expr: "case when is_subscriber then 1 else 0 end"
+
+  - name: products
+    description: "Articles. Une ligne = un article."
+    model: ref('dim_products')
+    entities:
+      - name: product
+        type: primary
+        expr: product_id
+    dimensions:
+      - name: category
+        type: categorical
+      - name: item_name
+        type: categorical

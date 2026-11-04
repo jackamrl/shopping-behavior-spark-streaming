@@ -1,0 +1,29 @@
+# À placer dans .github/workflows/ à la racine du dépôt (adapter working-directory si besoin).
+name: dbt CI
+
+on:
+  pull_request:
+    paths: ["dbt_shopping/**"]
+
+jobs:
+  dbt-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt_shopping
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt_shopping/ci
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      DBT_CI_SCHEMA: CI_PR_${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "dbt-snowflake~=1.10"
+      - name: Build + tests dans un schéma isolé par pull request
+        run: dbt build --target ci
+      - name: Vérifier la couche sémantique
+        run: dbt parse

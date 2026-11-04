@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: "Table de faits. Une ligne = un achat. Source de vérité pour le revenu et le panier."
+    columns:
+      - name: order_id
+        description: "Identifiant unique de l'achat (hash MD5)."
+        tests: [unique, not_null]
+      - name: customer_id
+        description: "Client ayant passé l'achat."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: net_amount_usd
+        description: "Montant réellement payé, en USD."
+        tests:
+          - not_null
+          - value_between:
+              arguments: {min_value: 0, max_value: 10000}
+      - name: payment_method
+        description: "Moyen de paiement."
+      - name: satisfaction_level
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Very Satisfied', 'Satisfied', 'Neutral', 'Dissatisfied', 'Very Dissatisfied']
+
+  - name: dim_customers
+    description: "Dimension client. Une ligne = un client, avec ses attributs les plus récents."
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: first_seen_at
+        description: "Date du premier achat connu du client."
+      - name: customer_segment
+        description: "VIP (10+ achats précédents), Regular (5-9), Occasional (2-4), New (0-1)."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['VIP', 'Regular', 'Occasional', 'New']
+      - name: is_returning_customer
+        description: "Vrai si le client avait déjà acheté avant (previous_purchases > 0). Sert d'approximation de la rétention."
+      - name: loyalty_level
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['High', 'Medium', 'Low']
+
+  - name: dim_products
+    description: "Dimension produit. Une ligne = un article."
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+      - name: category
+        tests: [not_null]

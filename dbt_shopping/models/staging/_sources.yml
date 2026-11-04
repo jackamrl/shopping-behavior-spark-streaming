@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: shopping_raw
+    description: "Achats chargés depuis BigQuery (sortie du pipeline Spark Structured Streaming) vers Snowflake."
+    database: RAW
+    schema: SHOPPING
+    tables:
+      - name: orders
+        description: "Une ligne = un achat traité par le job Spark (déjà dédupliqué par hash MD5 côté streaming)."
+        loaded_at_field: processed_time
+        freshness:
+          warn_after: {count: 24, period: hour}
+          error_after: {count: 72, period: hour}
+        columns:
+          - name: customer_id
+            tests: [not_null]
+          - name: purchase_amount_usd
+            tests: [not_null]
