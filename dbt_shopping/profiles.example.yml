@@ -1,0 +1,25 @@
+# Copier dans ~/.dbt/profiles.yml et remplir avec vos informations Snowflake.
+# Ne jamais commiter de mot de passe : utiliser une variable d'environnement.
+shopping_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "<org>-<compte>"          # ex. abc12345.eu-west-1
+      user: "<VOTRE_USER>"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER
+      warehouse: TRANSFORM_WH
+      database: ANALYTICS
+      schema: DBT_DEV
+      threads: 4
+    prod:
+      type: snowflake
+      account: "<org>-<compte>"
+      user: "<VOTRE_USER>"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER
+      warehouse: TRANSFORM_WH
+      database: ANALYTICS
+      schema: PROD
+      threads: 4

@@ -1,0 +1,95 @@
+version: 2
+
+metrics:
+  - name: revenue
+    label: "Revenu (USD)"
+    description: "Chiffre d'affaires réellement encaissé, après remise."
+    type: simple
+    type_params:
+      measure: net_revenue_usd
+
+  - name: orders
+    label: "Nombre d'achats"
+    type: simple
+    type_params:
+      measure: order_count
+
+  - name: average_basket
+    label: "Panier moyen (USD)"
+    description: "Revenu après remise / nombre d'achats."
+    type: ratio
+    type_params:
+      numerator: revenue
+      denominator: orders
+
+  - name: discount_rate
+    label: "Taux de remise"
+    description: "Montant des remises / revenu brut."
+    type: ratio
+    type_params:
+      numerator:
+        name: discount_total_usd_metric
+      denominator:
+        name: gross_revenue_usd_metric
+
+  - name: discount_total_usd_metric
+    label: "Remises totales (USD)"
+    type: simple
+    type_params:
+      measure: discount_total_usd
+
+  - name: gross_revenue_usd_metric
+    label: "Revenu brut (USD)"
+    type: simple
+    type_params:
+      measure: gross_revenue_usd
+
+  - name: active_buyers
+    label: "Clients acheteurs"
+    description: "Nombre de clients distincts ayant acheté sur la période."
+    type: simple
+    type_params:
+      measure: buyers
+
+  - name: average_rating
+    label: "Note moyenne"
+    type: simple
+    type_params:
+      measure: avg_review_rating
+
+  - name: customers_total
+    label: "Nombre de clients"
+    type: simple
+    type_params:
+      measure: customer_count
+
+  - name: returning_customers
+    label: "Clients ayant déjà acheté"
+    type: simple
+    type_params:
+      measure: returning_customer_count
+
+  - name: retention_rate
+    label: "Taux de clients récurrents"
+    description: >
+      Part des clients ayant déjà acheté avant (previous_purchases > 0).
+      Approximation de la rétention : la source n'a pas d'historique daté par client.
+      Avec un historique, on la calculerait par cohorte mensuelle.
+    type: ratio
+    type_params:
+      numerator: returning_customers
+      denominator: customers_total
+
+  - name: subscriber_rate
+    label: "Taux d'abonnés"
+    type: ratio
+    type_params:
+      numerator:
+        name: subscribers_metric
+      denominator: customers_total
+
+  - name: subscribers_metric
+    label: "Abonnés"
+    type: simple
+    type_params:
+      measure: subscriber_count

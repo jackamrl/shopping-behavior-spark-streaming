@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: "Achats nettoyés : noms en snake_case, types explicites, booléens à la place des Yes/No."
+    columns:
+      - name: customer_id
+        description: "Identifiant client fourni par la source."
+        tests: [not_null]
+      - name: amount_usd
+        description: "Montant brut de l'achat en USD, avant remise."
+        tests:
+          - not_null
+          - value_between:
+              arguments: {min_value: 0, max_value: 10000}
+      - name: review_rating
+        description: "Note laissée par le client, de 1 à 5."
+        tests:
+          - value_between:
+              arguments: {min_value: 1, max_value: 5}
+      - name: season
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Spring', 'Summer', 'Fall', 'Winter']
+      - name: purchased_at
+        description: "Horodatage d'ingestion par Spark, utilisé comme date d'achat (la source n'a pas de date d'achat)."
+        tests: [not_null]

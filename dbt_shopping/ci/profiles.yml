@@ -1,0 +1,14 @@
+# Profil utilisé uniquement par la CI GitHub Actions (variables fournies par les secrets du dépôt).
+shopping_analytics:
+  target: ci
+  outputs:
+    ci:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: TRANSFORMER
+      warehouse: TRANSFORM_WH
+      database: ANALYTICS
+      schema: "{{ env_var('DBT_CI_SCHEMA', 'CI') }}"
+      threads: 4

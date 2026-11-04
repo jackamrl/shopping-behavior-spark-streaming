@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: int_orders_deduplicated
+    description: "Un achat unique par hash MD5 (même logique que le job Spark), version la plus récente conservée."
+    columns:
+      - name: order_id
+        description: "Hash MD5 des colonnes métier de l'achat."
+        tests: [unique, not_null]
+
+  - name: int_orders_enriched
+    description: "Règles métier reprises du job Spark : montant net après remise, taille de panier, satisfaction, saison."
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: net_amount_usd
+        description: "Montant payé après remise de 10 % si une remise est appliquée."
+        tests: [not_null]
+      - name: basket_size
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Small', 'Medium', 'Large', 'Premium']
